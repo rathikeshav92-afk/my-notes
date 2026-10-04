@@ -55,12 +55,18 @@ function findNote(p) {
   const [c, s, ch] = String(p).split('/');
   return classes.find(x => x.name === c)?.subjects.find(x => x.name === s)?.chapters.find(x => x.name === ch)?.notes.find(n => n.path === p);
 }
+// A PDF lives either in a subject's Chapter PDFs folder or inside a chapter, next to its notes.
 function findPdf(p) {
-  const [c, s] = String(p).split('/');
-  return classes.find(x => x.name === c)?.subjects.find(x => x.name === s)?.pdfs.find(x => x.path === p);
+  const [c, s, , ] = String(p).split('/');
+  const subj = classes.find(x => x.name === c)?.subjects.find(x => x.name === s);
+  return subj && [...subj.pdfs, ...subj.chapters.flatMap(ch => ch.pdfs)].find(x => x.path === p);
 }
+const pdfInChapter = p => String(p).split('/')[2] !== 'Chapter PDFs';
 function allPdfs(c) {
-  return c.subjects.flatMap(s => s.pdfs.map(x => ({ ...x, subject: s.name, cls: c.name })));
+  return c.subjects.flatMap(s => [
+    ...s.pdfs.map(x => ({ ...x, subject: s.name, cls: c.name, where: 'Chapter PDFs' })),
+    ...s.chapters.flatMap(ch => ch.pdfs.map(x => ({ ...x, subject: s.name, cls: c.name, where: ch.name }))),
+  ]);
 }
 function allNotes(c) {
   return c.subjects.flatMap(s => s.chapters.flatMap(ch => ch.notes.map(n => ({ ...n, subject: s.name, chapter: ch.name, cls: c.name }))));
@@ -124,7 +130,8 @@ function fabLabel() {
   if (view.mode === 'edit') return null;
   if (!cls) return 'New class';
   if (view.mode === 'pdf') return null;
-  if (view.mode === 'note' || path.length === 3) return 'New note';
+  if (view.mode === 'note') return 'New note';
+  if (path.length === 3) return 'Add note or PDF';
   if (path.length === 2) return path[1] === 'pdfs' ? 'Upload PDF' : 'New chapter';
   return path.length ? 'Add PDF or chapter' : 'New subject';
 }
@@ -220,16 +227,25 @@ function chaptersView() {
     return head + `<div class="empty"><div class="big">📂</div><h2>No chapters yet</h2><p>Press the ＋ button to add a chapter.</p></div>`;
   }
   return head + `<p class="label">Chapters</p><div class="grid">${s.chapters.map(ch =>
-    folderCard(ch.name, '📂', plural(ch.notes.length, 'note'), ch.notes.some(isNew))).join('')}</div>`;
+    folderCard(ch.name, '📂', ch.pdfs.length ? `${plural(ch.notes.length, 'note')} · ${plural(ch.pdfs.length, 'PDF')}` : plural(ch.notes.length, 'note'),
+      ch.notes.some(isNew))).join('')}</div>`;
 }
 
+// A chapter: its notes and its PDFs, with buttons to add either.
 function notesView() {
   const ch = curChapter();
-  const head = `<h1 class="page">📂 ${esc(ch.name)}</h1>`;
-  if (!ch.notes.length) {
-    return head + `<div class="empty"><div class="big">📝</div><h2>No notes yet</h2><p>Press the ＋ button to write a note, or ask Claude to make one for this chapter.</p></div>`;
+  const buttons = `<button class="btn ghost" data-action="write-note">✎ Write a note</button>
+    <label for="pdfInput" class="btn ghost" data-action="prepare-upload">📄 Upload PDF</label>`;
+  const head = `<div class="page-row"><h1 class="page">📂 ${esc(ch.name)}</h1>${ch.notes.length || ch.pdfs.length ? buttons : ''}</div>`;
+  if (!ch.notes.length && !ch.pdfs.length) {
+    return head + `<div class="empty"><div class="big">📝</div><h2>Nothing in this chapter yet</h2>
+      <p>Write a note, upload a PDF of your notes, or ask Claude to make notes for this chapter.</p>
+      <p class="empty-actions"><button class="btn" data-action="write-note">✎ Write a note</button>
+      <label for="pdfInput" class="btn" data-action="prepare-upload">📄 Upload PDF</label></p></div>`;
   }
-  return head + `<p class="label">${plural(ch.notes.length, 'note')}</p><div class="list">${ch.notes.map(n => noteCard(n)).join('')}</div>`;
+  return head
+    + (ch.pdfs.length ? `<div class="section"><p class="label">${plural(ch.pdfs.length, 'PDF')}</p><div class="list">${ch.pdfs.map(x => pdfCard(x)).join('')}</div></div>` : '')
+    + (ch.notes.length ? `<div class="section"><p class="label">${plural(ch.notes.length, 'note')}</p><div class="list">${ch.notes.map(n => noteCard(n)).join('')}</div></div>` : '');
 }
 
 function noteView(n) {
@@ -255,7 +271,7 @@ function searchView() {
       <div class="title">📝 ${highlight(n.title, query)}</div><div class="snippet">${highlight(snip, query)}</div>
       <div class="meta">${badge(n)}<span>${esc(`${n.cls} › ${n.subject} › ${n.chapter}`)}</span></div></div>`;
   });
-  rows.push(...pdfHits.map(x => pdfCard(x, `${x.cls} › ${x.subject} › Chapter PDFs`)));
+  rows.push(...pdfHits.map(x => pdfCard(x, `${x.cls} › ${x.subject} › ${x.where}`)));
   return `<p class="label">${plural(rows.length, 'result')} for “${esc(query)}”</p>
     ${rows.length ? `<div class="list">${rows.join('')}</div>` : '<div class="empty"><div class="big">🔍</div><p>No notes or PDFs match your search.</p></div>'}`;
 }
@@ -444,34 +460,35 @@ async function deleteFolder(segs) {
 }
 
 // ---------- PDFs ----------
+// Where uploaded PDFs go: the open chapter, otherwise the subject's Chapter PDFs folder.
 let uploadTo = null;
+const uploadTarget = () => (path[1] === 'notes' && path[2] ? [cls, path[0], path[2]] : [cls, path[0]]);
 function pickPdfs() {
-  uploadTo = [cls, path[0]];
-  $('pdfInput').value = '';
+  prepareUpload();
   $('pdfInput').click();
 }
 // Tapping an Upload PDF label: remember where the PDFs go; the label itself opens the picker.
 function prepareUpload() {
-  uploadTo = [cls, path[0]];
+  uploadTo = uploadTarget();
   $('pdfInput').value = '';
 }
 $('pdfInput').addEventListener('change', async e => {
   const files = [...(e.target.files || [])];
-  const subject = uploadTo || (cls && path[0] ? [cls, path[0]] : null);
+  const target = uploadTo || (cls && path[0] ? uploadTarget() : null);
   if (!files.length) return;
-  if (!subject) return toast('Open a subject first, then upload its PDFs.', 'error');
+  if (!target) return toast('Open a subject or chapter first, then upload its PDFs.', 'error');
   toast(files.length === 1 ? `Adding “${files[0].name}”…` : `Adding ${files.length} PDFs…`);
   let added = 0;
   for (const f of files) {
     try {
       if (f.size > 50 * 1024 * 1024) throw new Error(`“${f.name}” is larger than 50 MB, which GitHub can't sync. Please use a smaller PDF.`);
-      await api.addPdf(subject, f.name, new Uint8Array(await f.arrayBuffer()));
+      await api.addPdf(target, f.name, new Uint8Array(await f.arrayBuffer()));
       added++;
     } catch (err) { toast(err.message, 'error'); }
   }
   if (!added) return;
-  cls = subject[0];
-  path = [subject[1], 'pdfs'];
+  cls = target[0];
+  path = target.length === 3 ? [target[1], 'notes', target[2]] : [target[1], 'pdfs'];
   view = { mode: 'browse' };
   await reload();
   toast(added === 1 ? 'PDF added' : `${added} PDFs added`);
@@ -707,7 +724,14 @@ const actions = {
   fab: (_d, e) => {
     if (!cls) return newClass();
     if (view.mode === 'note') return openEditor(view.path.split('/').slice(0, 3));
-    if (path.length === 3) return openEditor([cls, path[0], path[2]]);
+    if (path.length === 3) {
+      const write = () => openEditor([cls, path[0], path[2]]);
+      if (!e) return write();
+      return showPopup(e, [
+        { label: '✎ Write a note', run: write },
+        { label: '📄 Upload PDF', run: pickPdfs },
+      ]);
+    }
     if (path.length === 2) return path[1] === 'pdfs' ? pickPdfs() : newFolder();
     if (path.length === 1) {
       const newChapter = () => { path = [path[0], 'notes']; render(); newFolder(); };
@@ -722,9 +746,9 @@ const actions = {
   'open-pdf': d => {
     const x = findPdf(d.path);
     if (!x) return;
-    const [c, s] = d.path.split('/');
+    const [c, s, folder] = d.path.split('/');
     cls = c;
-    path = [s, 'pdfs'];
+    path = pdfInChapter(d.path) ? [s, 'notes', folder] : [s, 'pdfs'];
     view = { mode: 'pdf', path: x.path };
     clearSearch();
     render();
@@ -738,6 +762,7 @@ const actions = {
     ]);
   },
   'prepare-upload': () => prepareUpload(),
+  'write-note': () => openEditor([cls, path[0], path[2]]),
   'pdf-zoom': d => zoomPdf(+d.step),
   'pdf-external': () => api.openPdfExternally(view.path).catch(e => toast(e.message, 'error')),
   'save-note': () => saveEditor(),
