@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta http-equiv="Content-Security-Policy"
-  content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://api.github.com">
+  content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' https://api.github.com">
 <meta name="theme-color" content="#0f1115">
 <meta name="color-scheme" content="dark">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -38,7 +38,7 @@
   <div class="popup" id="popup"></div>
   <div class="modal-bg" id="modalBg"><div class="modal" id="modal"></div></div>
   <div class="toasts" id="toasts"></div>
-  <input type="file" id="pdfInput" class="visually-hidden" accept="application/pdf,.pdf" multiple tabindex="-1" aria-hidden="true">
+  <input type="file" id="pdfInput" class="visually-hidden" accept=".pdf,.doc,.docx,.odt,.rtf,.ppt,.pptx,.odp,.xls,.xlsx,.csv,.ods,.jpg,.jpeg,.png,.gif,.webp,.heic,.txt,application/pdf,image/*" multiple tabindex="-1" aria-hidden="true">
 
   <script src="vendor/marked.umd.js"></script>
   <script src="vendor/purify.min.js"></script>

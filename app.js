@@ -41,7 +41,7 @@ function renderMd(md) {
 let classes = [];
 let cls = load('class', null);
 let path = [];                        // [subject, 'notes' | 'pdfs', chapter] inside the current class
-let view = { mode: 'browse' };        // browse | note {path} | edit {dir, note} | pdf {path}
+let view = { mode: 'browse' };        // browse | note {path} | edit {dir, note} | file {path}
 let query = '';
 let seen = new Set(load('seen', []));
 let syncState = { state: 'off' };
@@ -55,17 +55,17 @@ function findNote(p) {
   const [c, s, ch] = String(p).split('/');
   return classes.find(x => x.name === c)?.subjects.find(x => x.name === s)?.chapters.find(x => x.name === ch)?.notes.find(n => n.path === p);
 }
-// A PDF lives either in a subject's Chapter PDFs folder or inside a chapter, next to its notes.
-function findPdf(p) {
+// A file (PDF, Word, image, ...) lives either in a subject's Chapter PDFs folder or inside a chapter, next to its notes.
+function findFile(p) {
   const [c, s, , ] = String(p).split('/');
   const subj = classes.find(x => x.name === c)?.subjects.find(x => x.name === s);
-  return subj && [...subj.pdfs, ...subj.chapters.flatMap(ch => ch.pdfs)].find(x => x.path === p);
+  return subj && [...subj.files, ...subj.chapters.flatMap(ch => ch.files)].find(x => x.path === p);
 }
-const pdfInChapter = p => String(p).split('/')[2] !== 'Chapter PDFs';
-function allPdfs(c) {
+const fileInChapter = p => String(p).split('/')[2] !== 'Chapter PDFs';
+function allFiles(c) {
   return c.subjects.flatMap(s => [
-    ...s.pdfs.map(x => ({ ...x, subject: s.name, cls: c.name, where: 'Chapter PDFs' })),
-    ...s.chapters.flatMap(ch => ch.pdfs.map(x => ({ ...x, subject: s.name, cls: c.name, where: ch.name }))),
+    ...s.files.map(x => ({ ...x, subject: s.name, cls: c.name, where: 'Chapter PDFs' })),
+    ...s.chapters.flatMap(ch => ch.files.map(x => ({ ...x, subject: s.name, cls: c.name, where: ch.name }))),
   ]);
 }
 function allNotes(c) {
@@ -81,7 +81,7 @@ async function reload() {
   if (path[1] && !SECTION[path[1]]) path = path.slice(0, 1);
   if (path[2] && !curChapter()) path = path.slice(0, 2);
   if (view.mode === 'note' && !findNote(view.path)) view = { mode: 'browse' };
-  if (view.mode === 'pdf' && !findPdf(view.path)) view = { mode: 'browse' };
+  if (view.mode === 'file' && !findFile(view.path)) view = { mode: 'browse' };
   render();
 }
 
@@ -91,12 +91,12 @@ function render() {
   renderTop();
   if (view.mode === 'edit') return; // the editor owns the page while it is open
   const main = $('main');
-  if (view.mode === 'pdf' && !query && classes.length) {
-    // The open PDF keeps its pages; only start over when a different PDF is opened.
-    if (main.dataset.pdf !== view.path) showPdf(view.path);
+  if (view.mode === 'file' && !query && classes.length) {
+    // The open file keeps its pages; only start over when a different file is opened.
+    if (main.dataset.file !== view.path) showFile(view.path);
     return;
   }
-  closePdf();
+  closeFile();
   if (!classes.length) main.innerHTML = welcomeView();
   else if (query) main.innerHTML = searchView();
   else if (view.mode === 'note') main.innerHTML = noteView(findNote(view.path));
@@ -129,11 +129,11 @@ function renderTop() {
 function fabLabel() {
   if (view.mode === 'edit') return null;
   if (!cls) return 'New class';
-  if (view.mode === 'pdf') return null;
+  if (view.mode === 'file') return null;
   if (view.mode === 'note') return 'New note';
-  if (path.length === 3) return 'Add note or PDF';
-  if (path.length === 2) return path[1] === 'pdfs' ? 'Upload PDF' : 'New chapter';
-  return path.length ? 'Add PDF or chapter' : 'New subject';
+  if (path.length === 3) return 'Add note or file';
+  if (path.length === 2) return path[1] === 'pdfs' ? 'Upload file' : 'New chapter';
+  return path.length ? 'Add file or chapter' : 'New subject';
 }
 
 function renderSync() {
@@ -183,7 +183,7 @@ function subjectsView() {
   return `<h1 class="page">🎓 ${esc(c.name)}</h1>
     <div class="section"><p class="label">Subjects</p><div class="grid">${c.subjects.map(s => {
       const notes = s.chapters.flatMap(ch => ch.notes);
-      return folderCard(s.name, '📁', `${plural(s.pdfs.length, 'PDF')} · ${plural(notes.length, 'note')}`, notes.some(isNew));
+      return folderCard(s.name, '📁', `${plural(s.files.length, 'file')} · ${plural(notes.length, 'note')}`, notes.some(isNew));
     }).join('')}</div></div>
     ${recent.length ? `<div class="section"><p class="label">Recent notes</p><div class="list">${recent.map(n => noteCard(n, `${n.subject} › ${n.chapter}`)).join('')}</div></div>` : ''}`;
 }
@@ -197,27 +197,49 @@ function subjectView() {
     <div class="name">${SECTION[kind]}${hasNew ? '<span class="new-dot" title="New notes from Claude"></span>' : ''}</div>
     <div class="count">${count}</div></div>`;
   return `<h1 class="page">📁 ${esc(s.name)}</h1><div class="grid sections">
-    ${card('pdfs', '📄', plural(s.pdfs.length, 'PDF'), false)}
+    ${card('pdfs', '📄', plural(s.files.length, 'file'), false)}
     ${card('notes', '📝', `${plural(s.chapters.length, 'chapter')} · ${plural(notes.length, 'note')}`, notes.some(isNew))}</div>`;
 }
 
-function pdfCard(x, where) {
-  return `<div class="note pdf-item" data-action="open-pdf" data-path="${esc(x.path)}">
-    <button class="icon-btn more" data-action="pdf-menu" data-path="${esc(x.path)}" title="More">⋯</button>
-    <div class="title">📄 ${where ? highlight(x.name, query) : esc(x.name)}</div>
-    <div class="meta"><span class="badge pdf">PDF</span>${where ? `<span>${esc(where)}</span>` : ''}</div></div>`;
+// Coloured document icons, one per kind of file.
+const KIND = {
+  pdf: { label: 'PDF', color: '#e5484d', name: 'PDF' },
+  word: { label: 'DOC', color: '#3b82f6', name: 'Word document' },
+  slides: { label: 'PPT', color: '#f97316', name: 'PowerPoint' },
+  sheet: { label: 'XLS', color: '#22a55b', name: 'Spreadsheet' },
+  image: { label: 'IMG', color: '#a855f7', name: 'Image' },
+  text: { label: 'TXT', color: '#8b93a7', name: 'Text file' },
+};
+const kindOf = x => KIND[x.kind] || KIND.text;
+function fileIcon(x, size = 40) {
+  const k = kindOf(x);
+  const label = x.ext && x.ext.length <= 4 ? x.ext.toUpperCase() : k.label;
+  return `<svg class="file-icon" width="${size}" height="${Math.round(size * 1.2)}" viewBox="0 0 40 48" aria-hidden="true">
+    <path d="M4 2h22l10 10v32a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z" fill="#eef0f5"/>
+    <path d="M26 2v8a2 2 0 0 0 2 2h8z" fill="#c9cedb"/>
+    <rect x="0" y="26" width="34" height="14" rx="3" fill="${k.color}"/>
+    <text x="17" y="36.2" text-anchor="middle" font-family="Segoe UI, system-ui, sans-serif" font-size="${label.length > 3 ? 7.4 : 8.6}" font-weight="700" fill="#fff">${esc(label)}</text>
+  </svg>`;
+}
+
+function fileCard(x, where) {
+  return `<div class="note file-item" data-action="open-file" data-path="${esc(x.path)}">
+    ${fileIcon(x)}
+    <div class="file-text"><div class="title">${where ? highlight(x.name, query) : esc(x.name)}</div>
+    <div class="meta"><span>${kindOf(x).name}</span>${where ? `<span>· ${esc(where)}</span>` : ''}</div></div>
+    <button class="icon-btn more" data-action="file-menu" data-path="${esc(x.path)}" title="More">⋯</button></div>`;
 }
 
 function pdfsView() {
   const s = curSubject();
   // A <label> opens the device's file picker natively, the most reliable way on phones and iPads.
-  const upload = big => `<label for="pdfInput" class="btn${big ? '' : ' ghost'}" data-action="prepare-upload">📄 Upload PDF</label>`;
-  const head = `<div class="page-row"><h1 class="page">📄 ${esc(s.name)} · Chapter PDFs</h1>${s.pdfs.length ? upload(false) : ''}</div>`;
-  if (!s.pdfs.length) {
-    return head + `<div class="empty"><div class="big">📄</div><h2>No PDFs yet</h2>
-      <p>Upload chapter PDFs from this device. You can pick several at once.</p><p>${upload(true)}</p></div>`;
+  const upload = big => `<label for="pdfInput" class="btn${big ? '' : ' ghost'}" data-action="prepare-upload">📎 Upload file</label>`;
+  const head = `<div class="page-row"><h1 class="page">📄 ${esc(s.name)} · Chapter PDFs</h1>${s.files.length ? upload(false) : ''}</div>`;
+  if (!s.files.length) {
+    return head + `<div class="empty"><div class="big">📄</div><h2>No files yet</h2>
+      <p>Upload chapter PDFs, Word, PowerPoint, Excel, images or text files from this device. You can pick several at once.</p><p>${upload(true)}</p></div>`;
   }
-  return head + `<p class="label">${plural(s.pdfs.length, 'PDF')}</p><div class="list">${s.pdfs.map(x => pdfCard(x)).join('')}</div>`;
+  return head + `<p class="label">${plural(s.files.length, 'file')}</p><div class="list">${s.files.map(x => fileCard(x)).join('')}</div>`;
 }
 
 function chaptersView() {
@@ -227,24 +249,24 @@ function chaptersView() {
     return head + `<div class="empty"><div class="big">📂</div><h2>No chapters yet</h2><p>Press the ＋ button to add a chapter.</p></div>`;
   }
   return head + `<p class="label">Chapters</p><div class="grid">${s.chapters.map(ch =>
-    folderCard(ch.name, '📂', ch.pdfs.length ? `${plural(ch.notes.length, 'note')} · ${plural(ch.pdfs.length, 'PDF')}` : plural(ch.notes.length, 'note'),
+    folderCard(ch.name, '📂', ch.files.length ? `${plural(ch.notes.length, 'note')} · ${plural(ch.files.length, 'file')}` : plural(ch.notes.length, 'note'),
       ch.notes.some(isNew))).join('')}</div>`;
 }
 
-// A chapter: its notes and its PDFs, with buttons to add either.
+// A chapter: its notes and its files, with buttons to add either.
 function notesView() {
   const ch = curChapter();
   const buttons = `<button class="btn ghost" data-action="write-note">✎ Write a note</button>
-    <label for="pdfInput" class="btn ghost" data-action="prepare-upload">📄 Upload PDF</label>`;
-  const head = `<div class="page-row"><h1 class="page">📂 ${esc(ch.name)}</h1>${ch.notes.length || ch.pdfs.length ? buttons : ''}</div>`;
-  if (!ch.notes.length && !ch.pdfs.length) {
+    <label for="pdfInput" class="btn ghost" data-action="prepare-upload">📎 Upload file</label>`;
+  const head = `<div class="page-row"><h1 class="page">📂 ${esc(ch.name)}</h1>${ch.notes.length || ch.files.length ? buttons : ''}</div>`;
+  if (!ch.notes.length && !ch.files.length) {
     return head + `<div class="empty"><div class="big">📝</div><h2>Nothing in this chapter yet</h2>
-      <p>Write a note, upload a PDF of your notes, or ask Claude to make notes for this chapter.</p>
+      <p>Write a note, upload a PDF or document of your notes, or ask Claude to make notes for this chapter.</p>
       <p class="empty-actions"><button class="btn" data-action="write-note">✎ Write a note</button>
-      <label for="pdfInput" class="btn" data-action="prepare-upload">📄 Upload PDF</label></p></div>`;
+      <label for="pdfInput" class="btn" data-action="prepare-upload">📎 Upload file</label></p></div>`;
   }
   return head
-    + (ch.pdfs.length ? `<div class="section"><p class="label">${plural(ch.pdfs.length, 'PDF')}</p><div class="list">${ch.pdfs.map(x => pdfCard(x)).join('')}</div></div>` : '')
+    + (ch.files.length ? `<div class="section"><p class="label">${plural(ch.files.length, 'file')}</p><div class="list">${ch.files.map(x => fileCard(x)).join('')}</div></div>` : '')
     + (ch.notes.length ? `<div class="section"><p class="label">${plural(ch.notes.length, 'note')}</p><div class="list">${ch.notes.map(n => noteCard(n)).join('')}</div></div>` : '');
 }
 
@@ -253,6 +275,7 @@ function noteView(n) {
   return `<div class="doc">
     <div class="doc-head"><h1>${esc(n.title)}</h1>
       <button class="btn ghost" data-action="back">← Back</button>
+      <button class="btn ghost" data-action="share-note">↗ Share</button>
       <button class="btn" data-action="edit-note">✎ Edit</button>
       <button class="btn ghost danger" data-action="delete-note" title="Delete note">🗑</button></div>
     <div class="meta">${badge(n)}<span>Created ${fmtDate(n.created)}</span>${n.updated !== n.created ? `<span>· Edited ${fmtDate(n.updated)}</span>` : ''}</div>
@@ -262,7 +285,7 @@ function noteView(n) {
 function searchView() {
   const q = query.toLowerCase();
   const hits = classes.flatMap(allNotes).filter(n => `${n.title} ${n.body} ${n.subject} ${n.chapter}`.toLowerCase().includes(q));
-  const pdfHits = classes.flatMap(allPdfs).filter(x => x.name.toLowerCase().includes(q));
+  const fileHits = classes.flatMap(allFiles).filter(x => x.name.toLowerCase().includes(q));
   const rows = hits.map(n => {
     const text = plain(n.body);
     const at = text.toLowerCase().indexOf(q);
@@ -271,9 +294,9 @@ function searchView() {
       <div class="title">📝 ${highlight(n.title, query)}</div><div class="snippet">${highlight(snip, query)}</div>
       <div class="meta">${badge(n)}<span>${esc(`${n.cls} › ${n.subject} › ${n.chapter}`)}</span></div></div>`;
   });
-  rows.push(...pdfHits.map(x => pdfCard(x, `${x.cls} › ${x.subject} › ${x.where}`)));
+  rows.push(...fileHits.map(x => fileCard(x, `${x.cls} › ${x.subject} › ${x.where}`)));
   return `<p class="label">${plural(rows.length, 'result')} for “${esc(query)}”</p>
-    ${rows.length ? `<div class="list">${rows.join('')}</div>` : '<div class="empty"><div class="big">🔍</div><p>No notes or PDFs match your search.</p></div>'}`;
+    ${rows.length ? `<div class="list">${rows.join('')}</div>` : '<div class="empty"><div class="big">🔍</div><p>No notes or files match your search.</p></div>'}`;
 }
 
 // ---------- editor ----------
@@ -391,6 +414,7 @@ function toast(msg, kind = '') {
   el.className = `toast ${kind}`;
   el.textContent = msg;
   $('toasts').appendChild(el);
+  while ($('toasts').children.length > 3) $('toasts').firstElementChild.remove();
   setTimeout(() => el.remove(), kind === 'error' ? 6000 : 3500);
 }
 
@@ -399,7 +423,7 @@ function folderStats(segs) {
   const c = classes.find(x => x.name === segs[0]);
   if (segs.length === 1) return { subjects: c.subjects.length, notes: allNotes(c).length };
   const s = c.subjects.find(x => x.name === segs[1]);
-  if (segs.length === 2) return { pdfs: s.pdfs.length, chapters: s.chapters.length, notes: s.chapters.reduce((n, ch) => n + ch.notes.length, 0) };
+  if (segs.length === 2) return { files: s.files.length, chapters: s.chapters.length, notes: s.chapters.reduce((n, ch) => n + ch.notes.length, 0) };
   return { notes: s.chapters.find(x => x.name === segs[2]).notes.length };
 }
 
@@ -441,7 +465,7 @@ async function renameFolder(segs) {
 
 async function deleteFolder(segs) {
   const st = folderStats(segs);
-  const inside = [st.subjects != null && plural(st.subjects, 'subject'), st.pdfs != null && plural(st.pdfs, 'PDF'),
+  const inside = [st.subjects != null && plural(st.subjects, 'subject'), st.files != null && plural(st.files, 'file'),
     st.chapters != null && plural(st.chapters, 'chapter'), plural(st.notes, 'note')]
     .filter(Boolean).join(', ');
   const ok = await confirmBox({
@@ -459,15 +483,15 @@ async function deleteFolder(segs) {
   toast('Deleted');
 }
 
-// ---------- PDFs ----------
-// Where uploaded PDFs go: the open chapter, otherwise the subject's Chapter PDFs folder.
+// ---------- files (PDFs and other documents) ----------
+// Where uploaded files go: the open chapter, otherwise the subject's Chapter PDFs folder.
 let uploadTo = null;
 const uploadTarget = () => (path[1] === 'notes' && path[2] ? [cls, path[0], path[2]] : [cls, path[0]]);
-function pickPdfs() {
+function pickFiles() {
   prepareUpload();
   $('pdfInput').click();
 }
-// Tapping an Upload PDF label: remember where the PDFs go; the label itself opens the picker.
+// Tapping an Upload file label: remember where the files go; the label itself opens the picker.
 function prepareUpload() {
   uploadTo = uploadTarget();
   $('pdfInput').value = '';
@@ -476,13 +500,13 @@ $('pdfInput').addEventListener('change', async e => {
   const files = [...(e.target.files || [])];
   const target = uploadTo || (cls && path[0] ? uploadTarget() : null);
   if (!files.length) return;
-  if (!target) return toast('Open a subject or chapter first, then upload its PDFs.', 'error');
-  toast(files.length === 1 ? `Adding “${files[0].name}”…` : `Adding ${files.length} PDFs…`);
+  if (!target) return toast('Open a subject or chapter first, then upload its files.', 'error');
+  toast(files.length === 1 ? `Adding “${files[0].name}”…` : `Adding ${files.length} files…`);
   let added = 0;
   for (const f of files) {
     try {
-      if (f.size > 50 * 1024 * 1024) throw new Error(`“${f.name}” is larger than 50 MB, which GitHub can't sync. Please use a smaller PDF.`);
-      await api.addPdf(target, f.name, new Uint8Array(await f.arrayBuffer()));
+      if (f.size > 50 * 1024 * 1024) throw new Error(`“${f.name}” is larger than 50 MB, which GitHub can't sync. Please use a smaller file.`);
+      await api.addFile(target, f.name, new Uint8Array(await f.arrayBuffer()));
       added++;
     } catch (err) { toast(err.message, 'error'); }
   }
@@ -491,29 +515,77 @@ $('pdfInput').addEventListener('change', async e => {
   path = target.length === 3 ? [target[1], 'notes', target[2]] : [target[1], 'pdfs'];
   view = { mode: 'browse' };
   await reload();
-  toast(added === 1 ? 'PDF added' : `${added} PDFs added`);
+  toast(added === 1 ? 'File added' : `${added} files added`);
 });
 
-async function renamePdf(x) {
+async function renameFileItem(x) {
   const segs = x.path.split('/');
-  const p = await ask({ title: `Rename “${x.name}”`, value: x.name, ok: 'Rename', onSubmit: v => api.renamePdf(segs, v) });
+  const p = await ask({ title: `Rename “${x.name}”`, value: x.name, ok: 'Rename', onSubmit: v => api.renameFile(segs, v) });
   if (!p || p === x.path) return;
-  if (view.mode === 'pdf' && view.path === x.path) { view = { mode: 'pdf', path: p }; $('main').dataset.pdf = p; }
+  if (view.mode === 'file' && view.path === x.path) { view = { mode: 'file', path: p }; $('main').dataset.file = p; }
   await reload();
-  if (view.mode === 'pdf') $('pdfTitle').textContent = findPdf(p)?.name || '';
+  if (view.mode === 'file' && $('fileTitle')) $('fileTitle').textContent = findFile(p)?.name || '';
 }
 
-async function deletePdf(x) {
-  const ok = await confirmBox({ title: `Delete “${x.name}”?`, text: 'The PDF will be removed from this device and from GitHub.', ok: 'Delete', danger: true });
+async function deleteFileItem(x) {
+  const ok = await confirmBox({ title: `Delete “${x.name}”?`, text: 'The file will be removed from this device and from GitHub.', ok: 'Delete', danger: true });
   if (!ok) return;
-  try { await api.deletePdf(x.path.split('/')); } catch (e) { return toast(e.message, 'error'); }
+  try { await api.deleteFile(x.path.split('/')); } catch (e) { return toast(e.message, 'error'); }
   if (view.path === x.path) view = { mode: 'browse' };
   await reload();
-  toast('PDF deleted');
+  toast('File deleted');
 }
 
-// The reader: PDF.js draws each page onto a canvas as it scrolls into view.
-let pdfjs = null, pdf = null;
+// ---------- sharing ----------
+// Note text for messages: Markdown turned into plain text that reads well in WhatsApp, email and so on.
+function noteText(n) {
+  const body = n.body.trim()
+    .replace(/^#{1,6}\s+(.*)$/gm, (_m, h) => `*${h.trim()}*`)    // headings → bold line
+    .replace(/\*\*(.+?)\*\*/g, '*$1*')                         // **bold** → *bold*
+    .replace(/__(.+?)__/g, '*$1*')
+    .replace(/^\s*[-+]\s+/gm, '• ')                              // bullets
+    .replace(/!\[[^\]]*\]\(([^)]+)\)/g, '$1')                  // images → their link
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1 ($2)')             // links → text (link)
+    .replace(/`([^`]+)`/g, '$1');
+  return `*${n.title}*\n\n${body}\n`;
+}
+const isWindows = () => api.platform === 'windows';
+
+async function shareNote(n, e) {
+  if (isWindows()) {
+    return showPopup(e, [
+      { label: '📋 Copy note text', run: async () => { await api.copyText(noteText(n)); toast('Note copied. Paste it into WhatsApp, email or anywhere else.'); } },
+      { label: '💾 Save as text file', run: async () => { if (await api.saveTextFile(n.title, noteText(n))) toast('Note saved'); } },
+    ]);
+  }
+  try {
+    const r = await api.shareText(n.title, noteText(n));
+    if (r === 'copied') toast('Note copied. Paste it into WhatsApp, email or anywhere else.');
+  } catch (err) { toast(`Couldn't share: ${err.message}`, 'error'); }
+}
+
+async function shareFileItem(x, e) {
+  if (isWindows()) {
+    return showPopup(e, [
+      { label: '📂 Show in folder (to attach it)', run: () => api.showFileInFolder(x.path) },
+      { label: '💾 Save a copy…', run: async () => { if (await api.saveFileCopy(x.path)) toast('Copy saved'); } },
+      { label: '↗ Open in app', run: () => api.openFileExternally(x.path).catch(err => toast(err.message, 'error')) },
+    ]);
+  }
+  try {
+    const r = await api.shareFile(x.path);
+    if (r === 'downloaded') toast('File downloaded. You can send it from your Downloads.');
+    if (r && r.needsTap) {
+      // The browser needs a fresh tap before it opens the share menu.
+      openModal(`<h3>Share “${esc(x.name)}”</h3><p>Your file is ready.</p>
+        <div class="row"><button class="btn ghost" data-action="modal-cancel">Cancel</button><button class="btn" id="shareNow">Share</button></div>`);
+      $('shareNow').onclick = () => { closeModal(); r.needsTap().catch(err => toast(`Couldn't share: ${err.message}`, 'error')); };
+    }
+  } catch (err) { toast(`Couldn't share: ${err.message}`, 'error'); }
+}
+
+// ---------- file viewer ----------
+let pdfjs = null, pdf = null, blobUrl = null;
 async function loadPdfjs() {
   if (!pdfjs) {
     pdfjs = await import('./vendor/pdfjs/pdf.min.mjs');
@@ -522,34 +594,69 @@ async function loadPdfjs() {
   return pdfjs;
 }
 
-function closePdf() {
-  if (!pdf) return;
-  pdf.observer?.disconnect();
-  pdf.doc?.destroy();
-  pdf = null;
-  $('main').dataset.pdf = '';
+function closeFile() {
+  if (pdf) {
+    pdf.observer?.disconnect();
+    pdf.doc?.destroy();
+    pdf = null;
+  }
+  if (blobUrl) { URL.revokeObjectURL(blobUrl); blobUrl = null; }
+  $('main').dataset.file = '';
 }
 
-async function showPdf(p) {
-  closePdf();
-  const x = findPdf(p);
+const IMAGE_MIME = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp' };
+
+// Open any file: PDFs and images inside the app, text as text, others with a card to share or open them.
+async function showFile(p) {
+  closeFile();
+  const x = findFile(p);
   const main = $('main');
-  main.dataset.pdf = p;
+  main.dataset.file = p;
   main.scrollTop = 0;
+  const isPdf = x.kind === 'pdf';
   main.innerHTML = `<div class="pdf-view">
     <div class="pdf-bar">
       <button class="btn ghost" data-action="back">← Back</button>
-      <div class="pdf-title" id="pdfTitle">${esc(x.name)}</div>
-      <span class="pdf-page" id="pdfPage"></span>
+      <div class="pdf-title" id="fileTitle">${esc(x.name)}</div>
+      ${isPdf ? `<span class="pdf-page" id="pdfPage"></span>
       <button class="btn ghost" data-action="pdf-zoom" data-step="-1" title="Zoom out">−</button>
-      <button class="btn ghost" data-action="pdf-zoom" data-step="1" title="Zoom in">＋</button>
-      ${api.openPdfExternally ? '<button class="btn ghost" data-action="pdf-external" title="Open in your PDF app">Open in app</button>' : ''}
-      <button class="icon-btn" data-action="pdf-menu" data-path="${esc(p)}" title="More">⋯</button>
+      <button class="btn ghost" data-action="pdf-zoom" data-step="1" title="Zoom in">＋</button>` : ''}
+      <button class="btn" data-action="share-file" data-path="${esc(p)}">↗ Share</button>
+      <button class="icon-btn" data-action="file-menu" data-path="${esc(p)}" title="More">⋯</button>
     </div>
-    <div class="pdf-pages" id="pdfPages"><div class="empty">Opening PDF…</div></div></div>`;
+    <div class="pdf-pages" id="pdfPages"><div class="empty">Opening…</div></div></div>`;
+  const box = $('pdfPages');
+  try {
+    if (isPdf) return await openPdf(p);
+    if (IMAGE_MIME[x.ext]) {
+      const data = await api.readFile(p.split('/'));
+      if (main.dataset.file !== p) return;
+      blobUrl = URL.createObjectURL(new Blob([data], { type: IMAGE_MIME[x.ext] }));
+      box.innerHTML = `<img class="file-image" src="${blobUrl}" alt="${esc(x.name)}">`;
+      return;
+    }
+    if (x.ext === 'txt' || x.ext === 'csv') {
+      const data = await api.readFile(p.split('/'));
+      if (main.dataset.file !== p) return;
+      box.innerHTML = `<pre class="file-text-view">${esc(new TextDecoder().decode(data))}</pre>`;
+      return;
+    }
+    // Word, PowerPoint, Excel, HEIC: can't be drawn here, so offer to open or share them.
+    box.innerHTML = `<div class="file-card">${fileIcon(x, 88)}
+      <h2>${esc(x.name)}.${esc(x.ext)}</h2><p>${kindOf(x).name}</p>
+      <p class="hint-text">${isWindows() ? 'Open it in its own app, or share it.' : 'Tap Share to open it in Word, PowerPoint or another app, or to send it.'}</p>
+      <p class="empty-actions">${api.openFileExternally ? `<button class="btn" data-action="file-external">↗ Open in app</button>` : ''}
+      <button class="btn${api.openFileExternally ? ' ghost' : ''}" data-action="share-file" data-path="${esc(p)}">↗ Share</button></p></div>`;
+  } catch (e) {
+    if (main.dataset.file === p) box.innerHTML = `<div class="empty"><div class="big">⚠️</div><p>This file couldn't be opened.<br>${esc(e.message)}</p></div>`;
+  }
+}
+
+// The PDF reader: PDF.js draws each page onto a canvas as it scrolls into view.
+async function openPdf(p) {
   const state = pdf = { path: p, zoom: 1 };
   try {
-    const [lib, data] = await Promise.all([loadPdfjs(), api.readPdf(p.split('/'))]);
+    const [lib, data] = await Promise.all([loadPdfjs(), api.readFile(p.split('/'))]);
     const base = new URL('vendor/pdfjs/', location.href).href;
     const doc = await lib.getDocument({
       data, cMapUrl: base + 'cmaps/', cMapPacked: true, standardFontDataUrl: base + 'standard_fonts/', wasmUrl: base + 'wasm/',
@@ -628,7 +735,7 @@ function updatePageNumber() {
   }
   $('pdfPage').textContent = `${current} / ${pdf.doc.numPages}`;
 }
-$('main').addEventListener('scroll', () => { if (pdf) updatePageNumber(); }, { passive: true });
+$('main').addEventListener('scroll', () => { if (pdf?.doc) updatePageNumber(); }, { passive: true });
 
 // ---------- settings ----------
 async function openSettings() {
@@ -729,42 +836,50 @@ const actions = {
       if (!e) return write();
       return showPopup(e, [
         { label: '✎ Write a note', run: write },
-        { label: '📄 Upload PDF', run: pickPdfs },
+        { label: '📄 Upload PDF', run: pickFiles },
       ]);
     }
-    if (path.length === 2) return path[1] === 'pdfs' ? pickPdfs() : newFolder();
+    if (path.length === 2) return path[1] === 'pdfs' ? pickFiles() : newFolder();
     if (path.length === 1) {
       const newChapter = () => { path = [path[0], 'notes']; render(); newFolder(); };
       if (!e) return newChapter();
       return showPopup(e, [
-        { label: '📄 Upload chapter PDF', run: pickPdfs },
+        { label: '📄 Upload chapter PDF', run: pickFiles },
         { label: '📝 New chapter for notes', run: newChapter },
       ]);
     }
     return newFolder();
   },
-  'open-pdf': d => {
-    const x = findPdf(d.path);
+  'open-file': d => {
+    const x = findFile(d.path);
     if (!x) return;
     const [c, s, folder] = d.path.split('/');
     cls = c;
-    path = pdfInChapter(d.path) ? [s, 'notes', folder] : [s, 'pdfs'];
-    view = { mode: 'pdf', path: x.path };
+    path = fileInChapter(d.path) ? [s, 'notes', folder] : [s, 'pdfs'];
+    view = { mode: 'file', path: x.path };
     clearSearch();
     render();
   },
-  'pdf-menu': (d, e) => {
-    const x = findPdf(d.path);
+  'file-menu': (d, e) => {
+    const x = findFile(d.path);
+    const share = isWindows()
+      ? [{ label: '📂 Show in folder', run: () => api.showFileInFolder(x.path) },
+        { label: '💾 Save a copy…', run: async () => { if (await api.saveFileCopy(x.path)) toast('Copy saved'); } },
+        { label: '↗ Open in app', run: () => api.openFileExternally(x.path).catch(err => toast(err.message, 'error')) }]
+      : [{ label: '↗ Share', run: () => shareFileItem(x) }];
     showPopup(e, [
-      { label: '✎ Rename', run: () => renamePdf(x) },
+      ...share,
+      { label: '✎ Rename', run: () => renameFileItem(x) },
       '-',
-      { label: '🗑 Delete', cls: 'danger', run: () => deletePdf(x) },
+      { label: '🗑 Delete', cls: 'danger', run: () => deleteFileItem(x) },
     ]);
   },
+  'share-file': (d, e) => shareFileItem(findFile(d.path), e),
+  'share-note': (_d, e) => shareNote(findNote(view.path), e),
   'prepare-upload': () => prepareUpload(),
   'write-note': () => openEditor([cls, path[0], path[2]]),
   'pdf-zoom': d => zoomPdf(+d.step),
-  'pdf-external': () => api.openPdfExternally(view.path).catch(e => toast(e.message, 'error')),
+  'file-external': () => api.openFileExternally(view.path).catch(e => toast(e.message, 'error')),
   'save-note': () => saveEditor(),
   'cancel-edit': async () => { if (await leaveEditor()) render(); },
   'toggle-preview': (_d, _e, el) => {
@@ -818,7 +933,7 @@ async function goBack() {
   if ($('popup').classList.contains('show') || $('classMenu').classList.contains('show')) { closeMenus(); return true; }
   if (view.mode === 'edit') { if (await leaveEditor()) render(); return true; }
   if (query) { clearSearch(); render(); return true; }
-  if (view.mode === 'note' || view.mode === 'pdf') { view = { mode: 'browse' }; render(); return true; }
+  if (view.mode === 'note' || view.mode === 'file') { view = { mode: 'browse' }; render(); return true; }
   if (path.length) { path.pop(); render(); return true; }
   return false;
 }

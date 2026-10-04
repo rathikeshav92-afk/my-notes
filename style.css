@@ -133,9 +133,19 @@ label.btn { display: inline-flex; align-items: center; gap: 6px; }
 .section-card { padding: 22px 20px 18px; }
 .section-card .icon { font-size: 38px; }
 .section-card .name { font-size: 17px; }
-.note.pdf-item { position: relative; padding-right: 52px; }
-.note.pdf-item .more { position: absolute; top: 50%; right: 8px; transform: translateY(-50%); }
-.badge.pdf { background: #3a2626; color: #ff8f8f; }
+.note.file-item { display: flex; align-items: center; gap: 14px; }
+.file-item .file-icon { flex: none; }
+.file-item .file-text { flex: 1; min-width: 0; }
+.file-item .title { overflow-wrap: anywhere; }
+.file-item .meta { margin-top: 2px; }
+.file-item .more { flex: none; }
+.file-image { max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 4px 18px rgba(0,0,0,.45); }
+.file-text-view { width: 100%; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px;
+  white-space: pre-wrap; overflow-wrap: anywhere; font-family: Consolas, monospace; font-size: 14px; user-select: text; -webkit-user-select: text; }
+.file-card { text-align: center; padding: 40px 16px; width: 100%; }
+.file-card h2 { margin: 16px 0 2px; overflow-wrap: anywhere; }
+.file-card p { color: var(--muted); margin: 4px 0; }
+.file-card .hint-text { margin: 14px 0 18px; }
 
 .pdf-view { max-width: 1140px; margin: 0 auto; }
 .pdf-bar { position: sticky; top: -22px; z-index: 5; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
@@ -192,7 +202,7 @@ label.btn { display: inline-flex; align-items: center; gap: 6px; }
 /* ---------- touch screens ---------- */
 @media (hover: none) {
   .folder .more { opacity: .7; }
-  .pdf-item .more { opacity: .8; }
+  .file-item .more { opacity: .8; }
   .folder:hover { transform: none; }
   .fab-tip, .editor .hint { display: none; }
   .icon-btn, .btn, .menu-item { min-height: 40px; }
