@@ -51,25 +51,57 @@ const curClass = () => classes.find(c => c.name === cls);
 const curSubject = () => (path[0] && curClass()?.subjects.find(s => s.name === path[0])) || null;
 const curChapter = () => (path[1] === 'notes' && path[2] && curSubject()?.chapters.find(c => c.name === path[2])) || null;
 const SECTION = { notes: 'Chapter Notes', pdfs: 'Chapter PDFs' };
-function findNote(p) {
-  const [c, s, ch] = String(p).split('/');
-  return classes.find(x => x.name === c)?.subjects.find(x => x.name === s)?.chapters.find(x => x.name === ch)?.notes.find(n => n.path === p);
+const PDF_DIR = 'Chapter PDFs';
+// The folder a note or file is in, as path segments, e.g. ['Class 11', 'Accounts', 'Depreciation'].
+const folderOf = p => String(p).split('/').slice(0, -1);
+// A short label for a folder: "Accounts › Depreciation", or just the class name for the class itself.
+const placeLabel = segs => (segs.length === 1 ? segs[0] : segs.slice(1).join(' › '));
+
+// The notes and files kept directly in a folder (a class, subject, chapter or Chapter PDFs).
+function folderContents(segs) {
+  const c = classes.find(x => x.name === segs[0]);
+  if (!c || segs.length === 1) return c || null;
+  const s = c.subjects.find(x => x.name === segs[1]);
+  if (!s || segs.length === 2) return s || null;
+  if (segs[2] === PDF_DIR) return { notes: [], files: s.pdfFolder };
+  return s.chapters.find(x => x.name === segs[2]) || null;
 }
-// A file (PDF, Word, image, ...) lives either in a subject's Chapter PDFs folder or inside a chapter, next to its notes.
-function findFile(p) {
-  const [c, s, , ] = String(p).split('/');
-  const subj = classes.find(x => x.name === c)?.subjects.find(x => x.name === s);
-  return subj && [...subj.files, ...subj.chapters.flatMap(ch => ch.files)].find(x => x.path === p);
+const findNote = p => folderContents(folderOf(p))?.notes.find(n => n.path === p);
+const findFile = p => folderContents(folderOf(p))?.files.find(x => x.path === p);
+
+// Every note or file in a class, each labelled with where it is.
+function everything(c, key) {
+  const out = [];
+  const add = (list, segs) => list.forEach(x => out.push({ ...x, cls: c.name, where: placeLabel(segs) }));
+  add(c[key], [c.name]);
+  for (const s of c.subjects) {
+    add(s[key], [c.name, s.name]);
+    if (key === 'files') add(s.pdfFolder, [c.name, s.name, PDF_DIR]);
+    for (const ch of s.chapters) add(ch[key], [c.name, s.name, ch.name]);
+  }
+  return out;
 }
-function allFiles(c) {
-  return c.subjects.flatMap(s => [
-    ...s.files.map(x => ({ ...x, subject: s.name, cls: c.name, where: 'Chapter PDFs' })),
-    ...s.chapters.flatMap(ch => ch.files.map(x => ({ ...x, subject: s.name, cls: c.name, where: ch.name }))),
-  ]);
+const allNotes = c => everything(c, 'notes');
+const allFiles = c => everything(c, 'files');
+const fullPlace = x => (x.where === x.cls ? x.cls : `${x.cls} › ${x.where}`);
+
+// The folder the screen shows (where ＋ adds things), and the way back to a folder.
+function currentFolder() {
+  if (view.mode === 'edit') return view.dir;
+  if (view.mode === 'note') return folderOf(view.path);
+  if (!path.length) return [cls];
+  if (path.length === 1) return [cls, path[0]];
+  if (path[1] === 'pdfs') return [cls, path[0], PDF_DIR];
+  if (path.length === 2) return [cls, path[0]];   // the Chapter Notes list belongs to its subject
+  return [cls, path[0], path[2]];
 }
-function allNotes(c) {
-  return c.subjects.flatMap(s => s.chapters.flatMap(ch => ch.notes.map(n => ({ ...n, subject: s.name, chapter: ch.name, cls: c.name }))));
+function goToFolder(segs) {
+  cls = segs[0];
+  if (segs.length === 1) path = [];
+  else if (segs.length === 2) path = [segs[1]];
+  else path = segs[2] === PDF_DIR ? [segs[1], 'pdfs'] : [segs[1], 'notes', segs[2]];
 }
+
 const isNew = n => n.author === 'claude' && !seen.has(n.path);
 const markSeen = n => { if (!seen.has(n.path)) { seen.add(n.path); save('seen', [...seen]); } };
 
@@ -121,10 +153,7 @@ function renderTop() {
 function fabLabel() {
   if (view.mode === 'edit') return null;
   if (!cls) return 'New class';
-  if (view.mode === 'note') return 'New note';
-  if (path.length === 3) return 'Add note or PDF';
-  if (path.length === 2) return path[1] === 'pdfs' ? 'Upload PDF' : 'New chapter';
-  return path.length ? 'Add PDF or chapter' : 'New subject';
+  return 'Add a folder, PDF or note';
 }
 
 function renderSync() {
@@ -164,22 +193,33 @@ function noteCard(n, where) {
 }
 const badge = n => (n.author === 'claude' ? '<span class="badge">✨ by Claude</span>' : '<span class="badge me">by you</span>');
 
+// The PDFs and notes kept directly in a folder.
+function itemsSection(folder) {
+  return (folder.files.length ? `<div class="section"><p class="label">${plural(folder.files.length, 'PDF')}</p><div class="list">${folder.files.map(x => fileCard(x)).join('')}</div></div>` : '')
+    + (folder.notes.length ? `<div class="section"><p class="label">${plural(folder.notes.length, 'note')}</p><div class="list">${folder.notes.map(n => noteCard(n)).join('')}</div></div>` : '');
+}
+const addHint = '<p>Press the ＋ button to add a folder, upload PDFs or write a note.</p>';
+
 function subjectsView() {
   const c = curClass();
-  const recent = allNotes(c).sort((a, b) => b.updated.localeCompare(a.updated) || b.mtime - a.mtime).slice(0, 6);
-  if (!c.subjects.length) {
-    return `<h1 class="page">🎓 ${esc(c.name)}</h1><div class="empty"><div class="big">📁</div><h2>No subjects yet</h2>
-      <p>Press the ＋ button to add your first subject.</p></div>`;
+  // Recent notes from inside the subjects (notes kept directly in the class are listed on their own).
+  const recent = allNotes(c).filter(n => n.where !== c.name)
+    .sort((a, b) => b.updated.localeCompare(a.updated) || b.mtime - a.mtime).slice(0, 6);
+  const head = `<h1 class="page">🎓 ${esc(c.name)}</h1>`;
+  if (!c.subjects.length && !c.files.length && !c.notes.length) {
+    return head + `<div class="empty"><div class="big">📁</div><h2>Nothing in ${esc(c.name)} yet</h2>${addHint}</div>`;
   }
-  return `<h1 class="page">🎓 ${esc(c.name)}</h1>
-    <div class="section"><p class="label">Subjects</p><div class="grid">${c.subjects.map(s => {
-      const notes = s.chapters.flatMap(ch => ch.notes);
-      return folderCard(s.name, '📁', `${plural(s.files.length, 'file')} · ${plural(notes.length, 'note')}`, notes.some(isNew));
-    }).join('')}</div></div>
-    ${recent.length ? `<div class="section"><p class="label">Recent notes</p><div class="list">${recent.map(n => noteCard(n, `${n.subject} › ${n.chapter}`)).join('')}</div></div>` : ''}`;
+  return head
+    + (c.subjects.length ? `<div class="section"><p class="label">Subjects</p><div class="grid">${c.subjects.map(s => {
+      const notes = [...s.notes, ...s.chapters.flatMap(ch => ch.notes)];
+      const files = s.files.length + s.pdfFolder.length + s.chapters.reduce((n, ch) => n + ch.files.length, 0);
+      return folderCard(s.name, '📁', `${plural(files, 'PDF')} · ${plural(notes.length, 'note')}`, notes.some(isNew));
+    }).join('')}</div></div>` : '')
+    + itemsSection(c)
+    + (recent.length ? `<div class="section"><p class="label">Recent notes</p><div class="list">${recent.map(n => noteCard(n, n.where)).join('')}</div></div>` : '');
 }
 
-// Inside a subject: one folder for chapter PDFs, one for chapter notes.
+// Inside a subject: one folder for chapter PDFs, one for chapter notes, then anything kept directly in the subject.
 function subjectView() {
   const s = curSubject();
   const notes = s.chapters.flatMap(ch => ch.notes);
@@ -188,8 +228,9 @@ function subjectView() {
     <div class="name">${SECTION[kind]}${hasNew ? '<span class="new-dot" title="New notes from Claude"></span>' : ''}</div>
     <div class="count">${count}</div></div>`;
   return `<h1 class="page">📁 ${esc(s.name)}</h1><div class="grid sections">
-    ${card('pdfs', '📄', plural(s.files.length, 'file'), false)}
-    ${card('notes', '📝', `${plural(s.chapters.length, 'chapter')} · ${plural(notes.length, 'note')}`, notes.some(isNew))}</div>`;
+    ${card('pdfs', '📄', plural(s.pdfFolder.length, 'PDF'), false)}
+    ${card('notes', '📝', `${plural(s.chapters.length, 'chapter')} · ${plural(notes.length, 'note')}`, notes.some(isNew))}</div>`
+    + itemsSection(s);
 }
 
 // Coloured document icons, one per kind of file.
@@ -225,19 +266,19 @@ function pdfsView() {
   const s = curSubject();
   // A <label> opens the device's file picker natively, the most reliable way on phones and iPads.
   const upload = big => `<label for="pdfInput" class="btn${big ? '' : ' ghost'}" data-action="prepare-upload">📄 Upload PDF</label>`;
-  const head = `<div class="page-row"><h1 class="page">📄 ${esc(s.name)} · Chapter PDFs</h1>${s.files.length ? upload(false) : ''}</div>`;
-  if (!s.files.length) {
+  const head = `<div class="page-row"><h1 class="page">📄 ${esc(s.name)} · Chapter PDFs</h1>${s.pdfFolder.length ? upload(false) : ''}</div>`;
+  if (!s.pdfFolder.length) {
     return head + `<div class="empty"><div class="big">📄</div><h2>No PDFs yet</h2>
       <p>Upload chapter PDFs from this device. You can pick several at once. Tapping a PDF opens it in your PDF app.</p><p>${upload(true)}</p></div>`;
   }
-  return head + `<p class="label">${plural(s.files.length, 'file')}</p><div class="list">${s.files.map(x => fileCard(x)).join('')}</div>`;
+  return head + `<p class="label">${plural(s.pdfFolder.length, 'PDF')}</p><div class="list">${s.pdfFolder.map(x => fileCard(x)).join('')}</div>`;
 }
 
 function chaptersView() {
   const s = curSubject();
   const head = `<h1 class="page">📝 ${esc(s.name)} · Chapter Notes</h1>`;
   if (!s.chapters.length) {
-    return head + `<div class="empty"><div class="big">📂</div><h2>No chapters yet</h2><p>Press the ＋ button to add a chapter.</p></div>`;
+    return head + `<div class="empty"><div class="big">📂</div><h2>No chapters yet</h2><p>Press the ＋ button to add a chapter folder.</p></div>`;
   }
   return head + `<p class="label">Chapters</p><div class="grid">${s.chapters.map(ch =>
     folderCard(ch.name, '📂', ch.files.length ? `${plural(ch.notes.length, 'note')} · ${plural(ch.files.length, 'file')}` : plural(ch.notes.length, 'note'),
@@ -256,9 +297,7 @@ function notesView() {
       <p class="empty-actions"><button class="btn" data-action="write-note">✎ Write a note</button>
       <label for="pdfInput" class="btn" data-action="prepare-upload">📄 Upload PDF</label></p></div>`;
   }
-  return head
-    + (ch.files.length ? `<div class="section"><p class="label">${plural(ch.files.length, 'file')}</p><div class="list">${ch.files.map(x => fileCard(x)).join('')}</div></div>` : '')
-    + (ch.notes.length ? `<div class="section"><p class="label">${plural(ch.notes.length, 'note')}</p><div class="list">${ch.notes.map(n => noteCard(n)).join('')}</div></div>` : '');
+  return head + itemsSection(ch);
 }
 
 function noteView(n) {
@@ -275,7 +314,7 @@ function noteView(n) {
 
 function searchView() {
   const q = query.toLowerCase();
-  const hits = classes.flatMap(allNotes).filter(n => `${n.title} ${n.body} ${n.subject} ${n.chapter}`.toLowerCase().includes(q));
+  const hits = classes.flatMap(allNotes).filter(n => `${n.title} ${n.body} ${n.where}`.toLowerCase().includes(q));
   const fileHits = classes.flatMap(allFiles).filter(x => x.name.toLowerCase().includes(q));
   const rows = hits.map(n => {
     const text = plain(n.body);
@@ -283,9 +322,9 @@ function searchView() {
     const snip = at < 0 ? text.slice(0, 140) : (at > 50 ? '…' : '') + text.slice(Math.max(0, at - 50), at + 110);
     return `<div class="note" data-action="open-note" data-path="${esc(n.path)}">
       <div class="title">📝 ${highlight(n.title, query)}</div><div class="snippet">${highlight(snip, query)}</div>
-      <div class="meta">${badge(n)}<span>${esc(`${n.cls} › ${n.subject} › ${n.chapter}`)}</span></div></div>`;
+      <div class="meta">${badge(n)}<span>${esc(fullPlace(n))}</span></div></div>`;
   });
-  rows.push(...fileHits.map(x => fileCard(x, `${x.cls} › ${x.subject} › ${x.where}`)));
+  rows.push(...fileHits.map(x => fileCard(x, fullPlace(x))));
   return `<p class="label">${plural(rows.length, 'result')} for “${esc(query)}”</p>
     ${rows.length ? `<div class="list">${rows.join('')}</div>` : '<div class="empty"><div class="big">🔍</div><p>No notes or files match your search.</p></div>'}`;
 }
@@ -321,12 +360,11 @@ function openEditor(dir, note) {
 async function saveEditor() {
   const title = $('edTitle').value.trim();
   if (!title) { toast('Please give the note a title.', 'error'); $('edTitle').focus(); return; }
-  const file = view.note ? view.note.split('/')[3] : undefined;
+  const file = view.note ? view.note.split('/').pop() : undefined;
   try {
     const p = await api.saveNote({ dir: view.dir, file, title, body: $('edBody').value });
     dirty = false;
-    cls = view.dir[0];
-    path = [view.dir[1], 'notes', view.dir[2]];
+    goToFolder(view.dir);
     view = { mode: 'note', path: p };
     await reload();
     toast('Note saved');
@@ -412,23 +450,29 @@ function toast(msg, kind = '') {
 // ---------- folder operations ----------
 function folderStats(segs) {
   const c = classes.find(x => x.name === segs[0]);
-  if (segs.length === 1) return { subjects: c.subjects.length, notes: allNotes(c).length };
+  if (segs.length === 1) return { subjects: c.subjects.length, files: allFiles(c).length, notes: allNotes(c).length };
   const s = c.subjects.find(x => x.name === segs[1]);
-  if (segs.length === 2) return { files: s.files.length, chapters: s.chapters.length, notes: s.chapters.reduce((n, ch) => n + ch.notes.length, 0) };
-  return { notes: s.chapters.find(x => x.name === segs[2]).notes.length };
+  if (segs.length === 2) {
+    return {
+      files: s.files.length + s.pdfFolder.length + s.chapters.reduce((n, ch) => n + ch.files.length, 0),
+      chapters: s.chapters.length,
+      notes: s.notes.length + s.chapters.reduce((n, ch) => n + ch.notes.length, 0),
+    };
+  }
+  const ch = s.chapters.find(x => x.name === segs[2]);
+  return { files: ch.files.length, notes: ch.notes.length };
 }
 
-// Add a subject (at the class level) or a chapter (inside a subject).
-async function newFolder() {
-  const kind = path.length ? 'chapter' : 'subject';
-  const subject = path[0];
+// Add a subject (inside a class) or a chapter (inside a subject).
+async function newFolder(parent = currentFolder()) {
+  const kind = parent.length === 1 ? 'subject' : 'chapter';
   const name = await ask({
-    title: `New ${kind}`,
+    title: `New ${kind} folder`,
     placeholder: kind === 'subject' ? 'e.g. Biology' : 'e.g. Ch 6 Life Processes',
-    onSubmit: v => api.createFolder(kind === 'subject' ? [cls] : [cls, subject], v),
+    onSubmit: v => api.createFolder(parent, v),
   });
   if (!name) return;
-  path = kind === 'subject' ? [name] : [subject, 'notes', name];
+  goToFolder([...parent, name]);
   view = { mode: 'browse' };
   await reload();
   toast(`${kind === 'subject' ? 'Subject' : 'Chapter'} “${name}” created`);
@@ -456,7 +500,7 @@ async function renameFolder(segs) {
 
 async function deleteFolder(segs) {
   const st = folderStats(segs);
-  const inside = [st.subjects != null && plural(st.subjects, 'subject'), st.files != null && plural(st.files, 'file'),
+  const inside = [st.subjects != null && plural(st.subjects, 'subject'), st.files != null && plural(st.files, 'PDF'),
     st.chapters != null && plural(st.chapters, 'chapter'), plural(st.notes, 'note')]
     .filter(Boolean).join(', ');
   const ok = await confirmBox({
@@ -475,23 +519,29 @@ async function deleteFolder(segs) {
 }
 
 // ---------- files (PDFs and other documents) ----------
-// Where uploaded files go: the open chapter, otherwise the subject's Chapter PDFs folder.
-let uploadTo = null;
-const uploadTarget = () => (path[1] === 'notes' && path[2] ? [cls, path[0], path[2]] : [cls, path[0]]);
-function pickFiles() {
-  prepareUpload();
+// Uploaded PDFs go into the folder on screen (or the one chosen from the ＋ menu).
+let uploadTo = null, folderUploadTo = null;
+function pickFiles(target = currentFolder()) {
+  prepareUpload(target);
   $('pdfInput').click();
 }
-// Tapping an Upload file label: remember where the files go; the label itself opens the picker.
-function prepareUpload() {
-  uploadTo = uploadTarget();
+// Tapping an Upload PDF label: remember where the files go; the label itself opens the picker.
+function prepareUpload(target = currentFolder()) {
+  uploadTo = target;
   $('pdfInput').value = '';
+}
+// Folder picking only works in computer browsers and the Windows app.
+const canPickFolder = 'webkitdirectory' in document.createElement('input') && matchMedia('(pointer: fine)').matches;
+function pickFolder(target = currentFolder()) {
+  folderUploadTo = target;
+  $('folderInput').value = '';
+  $('folderInput').click();
 }
 $('pdfInput').addEventListener('change', async e => {
   const files = [...(e.target.files || [])];
-  const target = uploadTo || (cls && path[0] ? uploadTarget() : null);
+  const target = uploadTo || (cls ? currentFolder() : null);
   if (!files.length) return;
-  if (!target) return toast('Open a subject or chapter first, then upload its files.', 'error');
+  if (!target) return toast('Create a class first, then upload PDFs into it.', 'error');
   toast(files.length === 1 ? `Adding “${files[0].name}”…` : `Adding ${files.length} PDFs…`);
   let added = 0;
   for (const f of files) {
@@ -502,12 +552,57 @@ $('pdfInput').addEventListener('change', async e => {
     } catch (err) { toast(err.message, 'error'); }
   }
   if (!added) return;
-  cls = target[0];
-  path = target.length === 3 ? [target[1], 'notes', target[2]] : [target[1], 'pdfs'];
+  goToFolder(target);
   view = { mode: 'browse' };
   await reload();
   toast(added === 1 ? 'PDF added' : `${added} PDFs added`);
 });
+
+// Upload a whole folder: its PDFs go into a folder of the same name, and its subfolders become
+// subjects/chapters as far as class › subject › chapter allows. Deeper PDFs go into the deepest folder.
+$('folderInput').addEventListener('change', async e => {
+  const all = [...(e.target.files || [])];
+  const base = folderUploadTo || currentFolder();
+  if (!all.length) return;
+  const pdfs = all.filter(f => /\.pdf$/i.test(f.name));
+  const top = (all[0].webkitRelativePath || '').split('/')[0] || 'folder';
+  if (!pdfs.length) return toast(`“${top}” has no PDFs in it.`, 'error');
+  toast(`Adding ${plural(pdfs.length, 'PDF')} from “${top}”…`);
+  const made = new Map();
+  let added = 0, landing = base;
+  for (const f of pdfs) {
+    try {
+      if (f.size > 50 * 1024 * 1024) throw new Error(`“${f.name}” is larger than 50 MB, which GitHub can't sync.`);
+      let dest = base;
+      for (const name of (f.webkitRelativePath || f.name).split('/').slice(0, -1)) {
+        if (dest.length >= 3) break; // no folders below a chapter
+        const key = [...dest, name].join('/');
+        if (!made.has(key)) made.set(key, [...dest, await api.ensureFolder(dest, name)]);
+        dest = made.get(key);
+        if (dest.length === base.length + 1) landing = dest;
+      }
+      await api.addFile(dest, f.name, new Uint8Array(await f.arrayBuffer()));
+      added++;
+    } catch (err) { toast(err.message, 'error'); }
+  }
+  goToFolder(landing);
+  view = { mode: 'browse' };
+  await reload();
+  const skipped = all.length - pdfs.length;
+  toast(`${plural(added, 'PDF')} added${skipped ? ` (${plural(skipped, 'other file')} skipped: only PDFs are stored)` : ''}`);
+});
+
+// What the ＋ button offers in the folder on screen.
+function addOptions() {
+  const here = currentFolder();
+  const inPdfFolder = here[2] === PDF_DIR;
+  const opts = [];
+  if (here.length < 3) opts.push({ label: here.length === 1 ? '📁 New subject folder' : '📁 New chapter folder', run: () => newFolder(here) });
+  opts.push({ label: '📄 Upload PDF', run: () => pickFiles(here) });
+  if (canPickFolder) opts.push({ label: '🗂 Upload a folder of PDFs', run: () => pickFolder(here) });
+  if (!inPdfFolder) opts.push({ label: '✎ Write a note', run: () => openEditor(here) });
+  return opts;
+}
 
 async function renameFileItem(x) {
   const segs = x.path.split('/');
@@ -665,9 +760,7 @@ const actions = {
   'open-note': d => {
     const n = findNote(d.path);
     if (!n) return;
-    const [c, s, ch] = d.path.split('/');
-    cls = c;
-    path = [s, 'notes', ch];
+    goToFolder(folderOf(d.path));
     view = { mode: 'note', path: n.path };
     markSeen(n);
     clearSearch();
@@ -675,7 +768,7 @@ const actions = {
     $('main').scrollTop = 0;
   },
   back: () => { view = { mode: 'browse' }; render(); },
-  'edit-note': () => { const n = findNote(view.path); openEditor(n.path.split('/').slice(0, 3), n); },
+  'edit-note': () => { const n = findNote(view.path); openEditor(folderOf(n.path), n); },
   'delete-note': async () => {
     const n = findNote(view.path);
     if (!(await confirmBox({ title: `Delete “${n.title}”?`, text: 'The note will be removed from this computer and from GitHub.', ok: 'Delete', danger: true }))) return;
@@ -686,25 +779,9 @@ const actions = {
   },
   fab: (_d, e) => {
     if (!cls) return newClass();
-    if (view.mode === 'note') return openEditor(view.path.split('/').slice(0, 3));
-    if (path.length === 3) {
-      const write = () => openEditor([cls, path[0], path[2]]);
-      if (!e) return write();
-      return showPopup(e, [
-        { label: '✎ Write a note', run: write },
-        { label: '📄 Upload PDF', run: pickFiles },
-      ]);
-    }
-    if (path.length === 2) return path[1] === 'pdfs' ? pickFiles() : newFolder();
-    if (path.length === 1) {
-      const newChapter = () => { path = [path[0], 'notes']; render(); newFolder(); };
-      if (!e) return newChapter();
-      return showPopup(e, [
-        { label: '📄 Upload chapter PDF', run: pickFiles },
-        { label: '📝 New chapter for notes', run: newChapter },
-      ]);
-    }
-    return newFolder();
+    const opts = addOptions();
+    if (!e) return opts[0].run(); // Ctrl+N: the first option
+    showPopup(e, opts);
   },
   'open-file': (d, e) => openFileItem(findFile(d.path), e),
   'file-menu': (d, e) => {
@@ -725,7 +802,7 @@ const actions = {
   'share-file': (d, e) => shareFileItem(findFile(d.path), e),
   'share-note': (_d, e) => shareNote(findNote(view.path), e),
   'prepare-upload': () => prepareUpload(),
-  'write-note': () => openEditor([cls, path[0], path[2]]),
+  'write-note': () => openEditor(currentFolder()),
   'save-note': () => saveEditor(),
   'cancel-edit': async () => { if (await leaveEditor()) render(); },
   'toggle-preview': (_d, _e, el) => {
@@ -791,8 +868,7 @@ api.onTreeChanged(async result => {
   await reload();
   const added = result.downloaded.map(findNote).filter(n => n && isNew(n));
   added.slice(0, 3).forEach(n => {
-    const [, s, ch] = n.path.split('/');
-    toast(`✨ Claude added “${n.title}” to ${s} › ${ch}`, 'claude');
+    toast(`✨ Claude added “${n.title}” to ${placeLabel(folderOf(n.path))}`, 'claude');
   });
   if (added.length > 3) toast(`✨ …and ${added.length - 3} more notes from Claude`, 'claude');
 });

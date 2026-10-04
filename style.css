@@ -129,7 +129,7 @@ mark { background: #5b4a12; color: inherit; border-radius: 3px; padding: 0 2px; 
 .page-row h1.page { margin: 0; flex: 1 1 260px; min-width: 0; overflow-wrap: anywhere; }
 label.btn { display: inline-flex; align-items: center; gap: 6px; }
 .empty-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
-.grid.sections { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
+.grid.sections { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); margin-bottom: 28px; }
 .section-card { padding: 22px 20px 18px; }
 .section-card .icon { font-size: 38px; }
 .section-card .name { font-size: 17px; }
