@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy"
+  content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://api.github.com">
+<meta name="theme-color" content="#0f1115">
+<meta name="color-scheme" content="dark">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="My Notes">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<title>My Notes</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="topbar">
+    <div class="class-select">
+      <button class="class-btn" id="classBtn" data-action="class-menu"></button>
+      <div class="menu" id="classMenu"></div>
+    </div>
+    <nav class="crumbs" id="crumbs"></nav>
+    <div class="spacer"></div>
+    <input class="search" id="search" type="search" placeholder="Search all notes" autocomplete="off">
+    <button class="sync-pill" id="syncPill" data-action="sync"></button>
+    <button class="icon-btn" data-action="settings" title="Settings">⚙</button>
+  </div>
+
+  <main id="main"></main>
+
+  <button class="fab" id="fab" data-action="fab" title="Add (Ctrl+N)">＋</button>
+  <div class="fab-tip" id="fabTip"></div>
+
+  <div class="popup" id="popup"></div>
+  <div class="modal-bg" id="modalBg"><div class="modal" id="modal"></div></div>
+  <div class="toasts" id="toasts"></div>
+
+  <script src="vendor/marked.umd.js"></script>
+  <script src="vendor/purify.min.js"></script>
+  <script src="backend.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
