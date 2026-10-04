@@ -1,7 +1,7 @@
-// Keeps the home-screen app working offline. The build replaces 1.4.0-1791128950781 so each release refreshes the cache.
+// Keeps the home-screen app working offline. The build replaces 1.5.0-1791130175346 so each release refreshes the cache.
 const CACHE = 'my-notes-VERSION';
 const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'backend.js', 'vendor/marked.umd.js', 'vendor/purify.min.js',
-  'vendor/pdfjs/pdf.min.mjs', 'vendor/pdfjs/pdf.worker.min.mjs', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];
+  'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));

@@ -41,7 +41,7 @@ function renderMd(md) {
 let classes = [];
 let cls = load('class', null);
 let path = [];                        // [subject, 'notes' | 'pdfs', chapter] inside the current class
-let view = { mode: 'browse' };        // browse | note {path} | edit {dir, note} | file {path}
+let view = { mode: 'browse' };        // browse | note {path} | edit {dir, note}
 let query = '';
 let seen = new Set(load('seen', []));
 let syncState = { state: 'off' };
@@ -61,7 +61,6 @@ function findFile(p) {
   const subj = classes.find(x => x.name === c)?.subjects.find(x => x.name === s);
   return subj && [...subj.files, ...subj.chapters.flatMap(ch => ch.files)].find(x => x.path === p);
 }
-const fileInChapter = p => String(p).split('/')[2] !== 'Chapter PDFs';
 function allFiles(c) {
   return c.subjects.flatMap(s => [
     ...s.files.map(x => ({ ...x, subject: s.name, cls: c.name, where: 'Chapter PDFs' })),
@@ -81,7 +80,6 @@ async function reload() {
   if (path[1] && !SECTION[path[1]]) path = path.slice(0, 1);
   if (path[2] && !curChapter()) path = path.slice(0, 2);
   if (view.mode === 'note' && !findNote(view.path)) view = { mode: 'browse' };
-  if (view.mode === 'file' && !findFile(view.path)) view = { mode: 'browse' };
   render();
 }
 
@@ -91,12 +89,6 @@ function render() {
   renderTop();
   if (view.mode === 'edit') return; // the editor owns the page while it is open
   const main = $('main');
-  if (view.mode === 'file' && !query && classes.length) {
-    // The open file keeps its pages; only start over when a different file is opened.
-    if (main.dataset.file !== view.path) showFile(view.path);
-    return;
-  }
-  closeFile();
   if (!classes.length) main.innerHTML = welcomeView();
   else if (query) main.innerHTML = searchView();
   else if (view.mode === 'note') main.innerHTML = noteView(findNote(view.path));
@@ -129,11 +121,10 @@ function renderTop() {
 function fabLabel() {
   if (view.mode === 'edit') return null;
   if (!cls) return 'New class';
-  if (view.mode === 'file') return null;
   if (view.mode === 'note') return 'New note';
-  if (path.length === 3) return 'Add note or file';
-  if (path.length === 2) return path[1] === 'pdfs' ? 'Upload file' : 'New chapter';
-  return path.length ? 'Add file or chapter' : 'New subject';
+  if (path.length === 3) return 'Add note or PDF';
+  if (path.length === 2) return path[1] === 'pdfs' ? 'Upload PDF' : 'New chapter';
+  return path.length ? 'Add PDF or chapter' : 'New subject';
 }
 
 function renderSync() {
@@ -233,11 +224,11 @@ function fileCard(x, where) {
 function pdfsView() {
   const s = curSubject();
   // A <label> opens the device's file picker natively, the most reliable way on phones and iPads.
-  const upload = big => `<label for="pdfInput" class="btn${big ? '' : ' ghost'}" data-action="prepare-upload">📎 Upload file</label>`;
+  const upload = big => `<label for="pdfInput" class="btn${big ? '' : ' ghost'}" data-action="prepare-upload">📄 Upload PDF</label>`;
   const head = `<div class="page-row"><h1 class="page">📄 ${esc(s.name)} · Chapter PDFs</h1>${s.files.length ? upload(false) : ''}</div>`;
   if (!s.files.length) {
-    return head + `<div class="empty"><div class="big">📄</div><h2>No files yet</h2>
-      <p>Upload chapter PDFs, Word, PowerPoint, Excel, images or text files from this device. You can pick several at once.</p><p>${upload(true)}</p></div>`;
+    return head + `<div class="empty"><div class="big">📄</div><h2>No PDFs yet</h2>
+      <p>Upload chapter PDFs from this device. You can pick several at once. Tapping a PDF opens it in your PDF app.</p><p>${upload(true)}</p></div>`;
   }
   return head + `<p class="label">${plural(s.files.length, 'file')}</p><div class="list">${s.files.map(x => fileCard(x)).join('')}</div>`;
 }
@@ -257,13 +248,13 @@ function chaptersView() {
 function notesView() {
   const ch = curChapter();
   const buttons = `<button class="btn ghost" data-action="write-note">✎ Write a note</button>
-    <label for="pdfInput" class="btn ghost" data-action="prepare-upload">📎 Upload file</label>`;
+    <label for="pdfInput" class="btn ghost" data-action="prepare-upload">📄 Upload PDF</label>`;
   const head = `<div class="page-row"><h1 class="page">📂 ${esc(ch.name)}</h1>${ch.notes.length || ch.files.length ? buttons : ''}</div>`;
   if (!ch.notes.length && !ch.files.length) {
     return head + `<div class="empty"><div class="big">📝</div><h2>Nothing in this chapter yet</h2>
-      <p>Write a note, upload a PDF or document of your notes, or ask Claude to make notes for this chapter.</p>
+      <p>Write a note, upload a PDF of your notes, or ask Claude to make notes for this chapter.</p>
       <p class="empty-actions"><button class="btn" data-action="write-note">✎ Write a note</button>
-      <label for="pdfInput" class="btn" data-action="prepare-upload">📎 Upload file</label></p></div>`;
+      <label for="pdfInput" class="btn" data-action="prepare-upload">📄 Upload PDF</label></p></div>`;
   }
   return head
     + (ch.files.length ? `<div class="section"><p class="label">${plural(ch.files.length, 'file')}</p><div class="list">${ch.files.map(x => fileCard(x)).join('')}</div></div>` : '')
@@ -501,7 +492,7 @@ $('pdfInput').addEventListener('change', async e => {
   const target = uploadTo || (cls && path[0] ? uploadTarget() : null);
   if (!files.length) return;
   if (!target) return toast('Open a subject or chapter first, then upload its files.', 'error');
-  toast(files.length === 1 ? `Adding “${files[0].name}”…` : `Adding ${files.length} files…`);
+  toast(files.length === 1 ? `Adding “${files[0].name}”…` : `Adding ${files.length} PDFs…`);
   let added = 0;
   for (const f of files) {
     try {
@@ -515,16 +506,14 @@ $('pdfInput').addEventListener('change', async e => {
   path = target.length === 3 ? [target[1], 'notes', target[2]] : [target[1], 'pdfs'];
   view = { mode: 'browse' };
   await reload();
-  toast(added === 1 ? 'File added' : `${added} files added`);
+  toast(added === 1 ? 'PDF added' : `${added} PDFs added`);
 });
 
 async function renameFileItem(x) {
   const segs = x.path.split('/');
   const p = await ask({ title: `Rename “${x.name}”`, value: x.name, ok: 'Rename', onSubmit: v => api.renameFile(segs, v) });
   if (!p || p === x.path) return;
-  if (view.mode === 'file' && view.path === x.path) { view = { mode: 'file', path: p }; $('main').dataset.file = p; }
   await reload();
-  if (view.mode === 'file' && $('fileTitle')) $('fileTitle').textContent = findFile(p)?.name || '';
 }
 
 async function deleteFileItem(x) {
@@ -584,158 +573,25 @@ async function shareFileItem(x, e) {
   } catch (err) { toast(`Couldn't share: ${err.message}`, 'error'); }
 }
 
-// ---------- file viewer ----------
-let pdfjs = null, pdf = null, blobUrl = null;
-async function loadPdfjs() {
-  if (!pdfjs) {
-    pdfjs = await import('./vendor/pdfjs/pdf.min.mjs');
-    pdfjs.GlobalWorkerOptions.workerSrc = new URL('vendor/pdfjs/pdf.worker.min.mjs', location.href).href;
-  }
-  return pdfjs;
-}
-
-function closeFile() {
-  if (pdf) {
-    pdf.observer?.disconnect();
-    pdf.doc?.destroy();
-    pdf = null;
-  }
-  if (blobUrl) { URL.revokeObjectURL(blobUrl); blobUrl = null; }
-  $('main').dataset.file = '';
-}
-
-const IMAGE_MIME = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp' };
-
-// Open any file: PDFs and images inside the app, text as text, others with a card to share or open them.
-async function showFile(p) {
-  closeFile();
-  const x = findFile(p);
-  const main = $('main');
-  main.dataset.file = p;
-  main.scrollTop = 0;
-  const isPdf = x.kind === 'pdf';
-  main.innerHTML = `<div class="pdf-view">
-    <div class="pdf-bar">
-      <button class="btn ghost" data-action="back">← Back</button>
-      <div class="pdf-title" id="fileTitle">${esc(x.name)}</div>
-      ${isPdf ? `<span class="pdf-page" id="pdfPage"></span>
-      <button class="btn ghost" data-action="pdf-zoom" data-step="-1" title="Zoom out">−</button>
-      <button class="btn ghost" data-action="pdf-zoom" data-step="1" title="Zoom in">＋</button>` : ''}
-      <button class="btn" data-action="share-file" data-path="${esc(p)}">↗ Share</button>
-      <button class="icon-btn" data-action="file-menu" data-path="${esc(p)}" title="More">⋯</button>
-    </div>
-    <div class="pdf-pages" id="pdfPages"><div class="empty">Opening…</div></div></div>`;
-  const box = $('pdfPages');
+// ---------- opening files ----------
+// Files are only stored here; opening one hands it to the device's own app (PDF reader, Word, ...).
+async function openFileItem(x, e) {
+  if (!x) return;
   try {
-    if (isPdf) return await openPdf(p);
-    if (IMAGE_MIME[x.ext]) {
-      const data = await api.readFile(p.split('/'));
-      if (main.dataset.file !== p) return;
-      blobUrl = URL.createObjectURL(new Blob([data], { type: IMAGE_MIME[x.ext] }));
-      box.innerHTML = `<img class="file-image" src="${blobUrl}" alt="${esc(x.name)}">`;
-      return;
+    if (isWindows()) return await api.openFileExternally(x.path);
+    toast(`Opening “${x.name}”…`);
+    const r = await api.openFile(x.path);
+    if (r === 'downloaded') toast('Saved to your Downloads. Open it from there.');
+    if (r && r.needsTap) {
+      // The browser needs a fresh tap before it shows the "Open in" menu.
+      openModal(`<h3>Open “${esc(x.name)}”</h3><p>Choose your PDF app (Books, Files, Adobe…) in the next menu.</p>
+        <div class="row"><button class="btn ghost" data-action="modal-cancel">Cancel</button><button class="btn" id="openNow">Open</button></div>`);
+      $('openNow').onclick = () => { closeModal(); r.needsTap().catch(err => toast(`Couldn't open: ${err.message}`, 'error')); };
     }
-    if (x.ext === 'txt' || x.ext === 'csv') {
-      const data = await api.readFile(p.split('/'));
-      if (main.dataset.file !== p) return;
-      box.innerHTML = `<pre class="file-text-view">${esc(new TextDecoder().decode(data))}</pre>`;
-      return;
-    }
-    // Word, PowerPoint, Excel, HEIC: can't be drawn here, so offer to open or share them.
-    box.innerHTML = `<div class="file-card">${fileIcon(x, 88)}
-      <h2>${esc(x.name)}.${esc(x.ext)}</h2><p>${kindOf(x).name}</p>
-      <p class="hint-text">${isWindows() ? 'Open it in its own app, or share it.' : 'Tap Share to open it in Word, PowerPoint or another app, or to send it.'}</p>
-      <p class="empty-actions">${api.openFileExternally ? `<button class="btn" data-action="file-external">↗ Open in app</button>` : ''}
-      <button class="btn${api.openFileExternally ? ' ghost' : ''}" data-action="share-file" data-path="${esc(p)}">↗ Share</button></p></div>`;
-  } catch (e) {
-    if (main.dataset.file === p) box.innerHTML = `<div class="empty"><div class="big">⚠️</div><p>This file couldn't be opened.<br>${esc(e.message)}</p></div>`;
+  } catch (err) {
+    toast(/no app|activity|not found/i.test(err.message) ? 'No app on this device can open this file. Install a PDF reader such as Adobe Acrobat or Google Drive.' : `Couldn't open: ${err.message}`, 'error');
   }
 }
-
-// The PDF reader: PDF.js draws each page onto a canvas as it scrolls into view.
-async function openPdf(p) {
-  const state = pdf = { path: p, zoom: 1 };
-  try {
-    const [lib, data] = await Promise.all([loadPdfjs(), api.readFile(p.split('/'))]);
-    const base = new URL('vendor/pdfjs/', location.href).href;
-    const doc = await lib.getDocument({
-      data, cMapUrl: base + 'cmaps/', cMapPacked: true, standardFontDataUrl: base + 'standard_fonts/', wasmUrl: base + 'wasm/',
-    }).promise;
-    if (pdf !== state) { doc.destroy(); return; }
-    state.doc = doc;
-    state.first = (await doc.getPage(1)).getViewport({ scale: 1 });
-    layoutPdf();
-  } catch (e) {
-    if (pdf === state) $('pdfPages').innerHTML = `<div class="empty"><div class="big">⚠️</div><p>This PDF couldn't be opened.<br>${esc(e.message)}</p></div>`;
-  }
-}
-
-// Lay out one placeholder per page, sized from the first page, and draw pages near the screen.
-function layoutPdf() {
-  const state = pdf, box = $('pdfPages');
-  state.observer?.disconnect();
-  const width = Math.min(box.clientWidth - 2, 1100) * state.zoom;
-  box.innerHTML = '';
-  for (let i = 1; i <= state.doc.numPages; i++) {
-    const page = document.createElement('div');
-    page.className = 'pdf-sheet';
-    page.dataset.page = i;
-    page.style.width = `${width}px`;
-    page.style.height = `${width * state.first.height / state.first.width}px`;
-    box.appendChild(page);
-  }
-  state.observer = new IntersectionObserver(entries => {
-    for (const en of entries) {
-      if (en.isIntersecting) drawPage(state, en.target, width);
-      else en.target.replaceChildren(); // free memory for pages far off-screen
-    }
-  }, { root: $('main'), rootMargin: '1200px 0px' });
-  box.querySelectorAll('.pdf-sheet').forEach(el => state.observer.observe(el));
-  updatePageNumber();
-}
-
-async function drawPage(state, el, width) {
-  if (el.firstChild || el.dataset.busy) return;
-  el.dataset.busy = '1';
-  try {
-    const page = await state.doc.getPage(+el.dataset.page);
-    const vp1 = page.getViewport({ scale: 1 });
-    const cssScale = width / vp1.width;
-    // Sharp on high-density screens, but within the canvas size limits of phones and iPads.
-    const dpr = Math.min(window.devicePixelRatio || 1, 2, Math.sqrt(16e6 / (vp1.width * vp1.height * cssScale * cssScale)));
-    const vp = page.getViewport({ scale: cssScale * dpr });
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.floor(vp.width);
-    canvas.height = Math.floor(vp.height);
-    el.style.height = `${vp.height / dpr}px`;
-    await page.render({ canvas, canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
-    if (pdf === state && el.isConnected) el.replaceChildren(canvas);
-  } catch { /* page left blank; it is retried when scrolled back into view */ }
-  delete el.dataset.busy;
-}
-
-function zoomPdf(step) {
-  if (!pdf?.doc) return;
-  const levels = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
-  const i = levels.indexOf(pdf.zoom);
-  const next = levels[Math.max(0, Math.min(levels.length - 1, i + step))];
-  if (next === pdf.zoom) return;
-  const main = $('main'), ratio = main.scrollTop / Math.max(1, main.scrollHeight);
-  pdf.zoom = next;
-  layoutPdf();
-  main.scrollTop = ratio * main.scrollHeight;
-}
-
-function updatePageNumber() {
-  if (!pdf?.doc) return;
-  const top = $('main').getBoundingClientRect().top;
-  let current = 1;
-  for (const el of $('pdfPages').children) {
-    if (el.getBoundingClientRect().top - top < $('main').clientHeight / 3) current = +el.dataset.page;
-  }
-  $('pdfPage').textContent = `${current} / ${pdf.doc.numPages}`;
-}
-$('main').addEventListener('scroll', () => { if (pdf?.doc) updatePageNumber(); }, { passive: true });
 
 // ---------- settings ----------
 async function openSettings() {
@@ -850,24 +706,16 @@ const actions = {
     }
     return newFolder();
   },
-  'open-file': d => {
-    const x = findFile(d.path);
-    if (!x) return;
-    const [c, s, folder] = d.path.split('/');
-    cls = c;
-    path = fileInChapter(d.path) ? [s, 'notes', folder] : [s, 'pdfs'];
-    view = { mode: 'file', path: x.path };
-    clearSearch();
-    render();
-  },
+  'open-file': (d, e) => openFileItem(findFile(d.path), e),
   'file-menu': (d, e) => {
     const x = findFile(d.path);
     const share = isWindows()
       ? [{ label: '📂 Show in folder', run: () => api.showFileInFolder(x.path) },
         { label: '💾 Save a copy…', run: async () => { if (await api.saveFileCopy(x.path)) toast('Copy saved'); } },
-        { label: '↗ Open in app', run: () => api.openFileExternally(x.path).catch(err => toast(err.message, 'error')) }]
+      ]
       : [{ label: '↗ Share', run: () => shareFileItem(x) }];
     showPopup(e, [
+      { label: '📖 Open', run: () => openFileItem(x) },
       ...share,
       { label: '✎ Rename', run: () => renameFileItem(x) },
       '-',
@@ -878,8 +726,6 @@ const actions = {
   'share-note': (_d, e) => shareNote(findNote(view.path), e),
   'prepare-upload': () => prepareUpload(),
   'write-note': () => openEditor([cls, path[0], path[2]]),
-  'pdf-zoom': d => zoomPdf(+d.step),
-  'file-external': () => api.openFileExternally(view.path).catch(e => toast(e.message, 'error')),
   'save-note': () => saveEditor(),
   'cancel-edit': async () => { if (await leaveEditor()) render(); },
   'toggle-preview': (_d, _e, el) => {
@@ -933,7 +779,7 @@ async function goBack() {
   if ($('popup').classList.contains('show') || $('classMenu').classList.contains('show')) { closeMenus(); return true; }
   if (view.mode === 'edit') { if (await leaveEditor()) render(); return true; }
   if (query) { clearSearch(); render(); return true; }
-  if (view.mode === 'note' || view.mode === 'file') { view = { mode: 'browse' }; render(); return true; }
+  if (view.mode === 'note') { view = { mode: 'browse' }; render(); return true; }
   if (path.length) { path.pop(); render(); return true; }
   return false;
 }
