@@ -40,8 +40,8 @@ function renderMd(md) {
 // ---------- state ----------
 let classes = [];
 let cls = load('class', null);
-let path = [];                        // [subject, chapter] inside the current class
-let view = { mode: 'browse' };        // browse | note {path} | edit {dir, note}
+let path = [];                        // [subject, 'notes' | 'pdfs', chapter] inside the current class
+let view = { mode: 'browse' };        // browse | note {path} | edit {dir, note} | pdf {path}
 let query = '';
 let seen = new Set(load('seen', []));
 let syncState = { state: 'off' };
@@ -49,10 +49,18 @@ let dirty = false;
 
 const curClass = () => classes.find(c => c.name === cls);
 const curSubject = () => (path[0] && curClass()?.subjects.find(s => s.name === path[0])) || null;
-const curChapter = () => (path[1] && curSubject()?.chapters.find(c => c.name === path[1])) || null;
+const curChapter = () => (path[1] === 'notes' && path[2] && curSubject()?.chapters.find(c => c.name === path[2])) || null;
+const SECTION = { notes: 'Chapter Notes', pdfs: 'Chapter PDFs' };
 function findNote(p) {
   const [c, s, ch] = String(p).split('/');
   return classes.find(x => x.name === c)?.subjects.find(x => x.name === s)?.chapters.find(x => x.name === ch)?.notes.find(n => n.path === p);
+}
+function findPdf(p) {
+  const [c, s] = String(p).split('/');
+  return classes.find(x => x.name === c)?.subjects.find(x => x.name === s)?.pdfs.find(x => x.path === p);
+}
+function allPdfs(c) {
+  return c.subjects.flatMap(s => s.pdfs.map(x => ({ ...x, subject: s.name, cls: c.name })));
 }
 function allNotes(c) {
   return c.subjects.flatMap(s => s.chapters.flatMap(ch => ch.notes.map(n => ({ ...n, subject: s.name, chapter: ch.name, cls: c.name }))));
@@ -64,8 +72,10 @@ async function reload() {
   try { classes = await api.tree(); } catch (e) { toast(e.message, 'error'); }
   if (!curClass()) { cls = classes[0]?.name ?? null; path = []; }
   if (path[0] && !curSubject()) path = [];
-  if (path[1] && !curChapter()) path = path.slice(0, 1);
+  if (path[1] && !SECTION[path[1]]) path = path.slice(0, 1);
+  if (path[2] && !curChapter()) path = path.slice(0, 2);
   if (view.mode === 'note' && !findNote(view.path)) view = { mode: 'browse' };
+  if (view.mode === 'pdf' && !findPdf(view.path)) view = { mode: 'browse' };
   render();
 }
 
@@ -75,11 +85,19 @@ function render() {
   renderTop();
   if (view.mode === 'edit') return; // the editor owns the page while it is open
   const main = $('main');
+  if (view.mode === 'pdf' && !query && classes.length) {
+    // The open PDF keeps its pages; only start over when a different PDF is opened.
+    if (main.dataset.pdf !== view.path) showPdf(view.path);
+    return;
+  }
+  closePdf();
   if (!classes.length) main.innerHTML = welcomeView();
   else if (query) main.innerHTML = searchView();
   else if (view.mode === 'note') main.innerHTML = noteView(findNote(view.path));
   else if (!path.length) main.innerHTML = subjectsView();
-  else if (path.length === 1) main.innerHTML = chaptersView();
+  else if (path.length === 1) main.innerHTML = subjectView();
+  else if (path[1] === 'pdfs') main.innerHTML = pdfsView();
+  else if (path.length === 2) main.innerHTML = chaptersView();
   else main.innerHTML = notesView();
 }
 
@@ -91,7 +109,8 @@ function renderTop() {
   if (cls) parts.push(path.length || view.mode !== 'browse' ? `<a data-action="crumb" data-i="0">Subjects</a>` : `<span>Subjects</span>`);
   path.forEach((p, i) => {
     const last = i === path.length - 1 && view.mode === 'browse';
-    parts.push(last ? `<span>${esc(p)}</span>` : `<a data-action="crumb" data-i="${i + 1}">${esc(p)}</a>`);
+    const label = i === 1 ? SECTION[p] : p;
+    parts.push(last ? `<span>${esc(label)}</span>` : `<a data-action="crumb" data-i="${i + 1}">${esc(label)}</a>`);
   });
   $('crumbs').innerHTML = parts.join('<span class="sep">›</span>');
 
@@ -104,8 +123,10 @@ function renderTop() {
 function fabLabel() {
   if (view.mode === 'edit') return null;
   if (!cls) return 'New class';
-  if (view.mode === 'note' || path.length === 2) return 'New note';
-  return path.length ? 'New chapter' : 'New subject';
+  if (view.mode === 'pdf') return null;
+  if (view.mode === 'note' || path.length === 3) return 'New note';
+  if (path.length === 2) return path[1] === 'pdfs' ? 'Upload PDF' : 'New chapter';
+  return path.length ? 'Add PDF or chapter' : 'New subject';
 }
 
 function renderSync() {
@@ -124,7 +145,7 @@ function renderSync() {
 
 function welcomeView() {
   return `<div class="empty"><div class="big">📚</div><h2>Welcome to My Notes</h2>
-    <p>Start by creating your first class, for example “Class 10”.<br>Then add subjects, chapters and notes with the ＋ button.</p>
+    <p>Start by creating your first class, for example “Class 10”.<br>Then add subjects, chapter PDFs, chapters and notes with the ＋ button.</p>
     <p><button class="btn" data-action="new-class">＋ Create a class</button>
     ${syncState.state === 'off' ? '<button class="btn ghost" data-action="settings">Connect to GitHub</button>' : ''}</p></div>`;
 }
@@ -155,14 +176,44 @@ function subjectsView() {
   return `<h1 class="page">🎓 ${esc(c.name)}</h1>
     <div class="section"><p class="label">Subjects</p><div class="grid">${c.subjects.map(s => {
       const notes = s.chapters.flatMap(ch => ch.notes);
-      return folderCard(s.name, '📁', `${plural(s.chapters.length, 'chapter')} · ${plural(notes.length, 'note')}`, notes.some(isNew));
+      return folderCard(s.name, '📁', `${plural(s.pdfs.length, 'PDF')} · ${plural(notes.length, 'note')}`, notes.some(isNew));
     }).join('')}</div></div>
     ${recent.length ? `<div class="section"><p class="label">Recent notes</p><div class="list">${recent.map(n => noteCard(n, `${n.subject} › ${n.chapter}`)).join('')}</div></div>` : ''}`;
 }
 
+// Inside a subject: one folder for chapter PDFs, one for chapter notes.
+function subjectView() {
+  const s = curSubject();
+  const notes = s.chapters.flatMap(ch => ch.notes);
+  const card = (kind, icon, count, hasNew) => `<div class="folder section-card" data-action="open-section" data-kind="${kind}">
+    <div class="icon">${icon}</div>
+    <div class="name">${SECTION[kind]}${hasNew ? '<span class="new-dot" title="New notes from Claude"></span>' : ''}</div>
+    <div class="count">${count}</div></div>`;
+  return `<h1 class="page">📁 ${esc(s.name)}</h1><div class="grid sections">
+    ${card('pdfs', '📄', plural(s.pdfs.length, 'PDF'), false)}
+    ${card('notes', '📝', `${plural(s.chapters.length, 'chapter')} · ${plural(notes.length, 'note')}`, notes.some(isNew))}</div>`;
+}
+
+function pdfCard(x, where) {
+  return `<div class="note pdf-item" data-action="open-pdf" data-path="${esc(x.path)}">
+    <button class="icon-btn more" data-action="pdf-menu" data-path="${esc(x.path)}" title="More">⋯</button>
+    <div class="title">📄 ${where ? highlight(x.name, query) : esc(x.name)}</div>
+    <div class="meta"><span class="badge pdf">PDF</span>${where ? `<span>${esc(where)}</span>` : ''}</div></div>`;
+}
+
+function pdfsView() {
+  const s = curSubject();
+  const head = `<h1 class="page">📄 ${esc(s.name)} · Chapter PDFs</h1>`;
+  if (!s.pdfs.length) {
+    return head + `<div class="empty"><div class="big">📄</div><h2>No PDFs yet</h2>
+      <p>Press the ＋ button to upload chapter PDFs from this device.</p></div>`;
+  }
+  return head + `<p class="label">${plural(s.pdfs.length, 'PDF')}</p><div class="list">${s.pdfs.map(x => pdfCard(x)).join('')}</div>`;
+}
+
 function chaptersView() {
   const s = curSubject();
-  const head = `<h1 class="page">📁 ${esc(s.name)}</h1>`;
+  const head = `<h1 class="page">📝 ${esc(s.name)} · Chapter Notes</h1>`;
   if (!s.chapters.length) {
     return head + `<div class="empty"><div class="big">📂</div><h2>No chapters yet</h2><p>Press the ＋ button to add a chapter.</p></div>`;
   }
@@ -193,6 +244,7 @@ function noteView(n) {
 function searchView() {
   const q = query.toLowerCase();
   const hits = classes.flatMap(allNotes).filter(n => `${n.title} ${n.body} ${n.subject} ${n.chapter}`.toLowerCase().includes(q));
+  const pdfHits = classes.flatMap(allPdfs).filter(x => x.name.toLowerCase().includes(q));
   const rows = hits.map(n => {
     const text = plain(n.body);
     const at = text.toLowerCase().indexOf(q);
@@ -201,8 +253,9 @@ function searchView() {
       <div class="title">📝 ${highlight(n.title, query)}</div><div class="snippet">${highlight(snip, query)}</div>
       <div class="meta">${badge(n)}<span>${esc(`${n.cls} › ${n.subject} › ${n.chapter}`)}</span></div></div>`;
   });
-  return `<p class="label">${plural(hits.length, 'result')} for “${esc(query)}”</p>
-    ${rows.length ? `<div class="list">${rows.join('')}</div>` : '<div class="empty"><div class="big">🔍</div><p>No notes match your search.</p></div>'}`;
+  rows.push(...pdfHits.map(x => pdfCard(x, `${x.cls} › ${x.subject} › Chapter PDFs`)));
+  return `<p class="label">${plural(rows.length, 'result')} for “${esc(query)}”</p>
+    ${rows.length ? `<div class="list">${rows.join('')}</div>` : '<div class="empty"><div class="big">🔍</div><p>No notes or PDFs match your search.</p></div>'}`;
 }
 
 // ---------- editor ----------
@@ -240,7 +293,8 @@ async function saveEditor() {
   try {
     const p = await api.saveNote({ dir: view.dir, file, title, body: $('edBody').value });
     dirty = false;
-    [cls, ...path] = view.dir;
+    cls = view.dir[0];
+    path = [view.dir[1], 'notes', view.dir[2]];
     view = { mode: 'note', path: p };
     await reload();
     toast('Note saved');
@@ -327,20 +381,21 @@ function folderStats(segs) {
   const c = classes.find(x => x.name === segs[0]);
   if (segs.length === 1) return { subjects: c.subjects.length, notes: allNotes(c).length };
   const s = c.subjects.find(x => x.name === segs[1]);
-  if (segs.length === 2) return { chapters: s.chapters.length, notes: s.chapters.reduce((n, ch) => n + ch.notes.length, 0) };
+  if (segs.length === 2) return { pdfs: s.pdfs.length, chapters: s.chapters.length, notes: s.chapters.reduce((n, ch) => n + ch.notes.length, 0) };
   return { notes: s.chapters.find(x => x.name === segs[2]).notes.length };
 }
 
 // Add a subject (at the class level) or a chapter (inside a subject).
 async function newFolder() {
   const kind = path.length ? 'chapter' : 'subject';
+  const subject = path[0];
   const name = await ask({
     title: `New ${kind}`,
     placeholder: kind === 'subject' ? 'e.g. Biology' : 'e.g. Ch 6 Life Processes',
-    onSubmit: v => api.createFolder([cls, ...path], v),
+    onSubmit: v => api.createFolder(kind === 'subject' ? [cls] : [cls, subject], v),
   });
   if (!name) return;
-  path = [...path, name];
+  path = kind === 'subject' ? [name] : [subject, 'notes', name];
   view = { mode: 'browse' };
   await reload();
   toast(`${kind === 'subject' ? 'Subject' : 'Chapter'} “${name}” created`);
@@ -361,13 +416,15 @@ async function renameFolder(segs) {
   seen = new Set([...seen].map(p => (p.startsWith(from) ? to + p.slice(from.length) : p)));
   save('seen', [...seen]);
   if (segs.length === 1 && cls === old) cls = name;
-  else if (segs[0] === cls && path[segs.length - 2] === old && segs.slice(1, -1).every((s, i) => path[i] === s)) path[segs.length - 2] = name;
+  else if (segs[0] === cls && segs.length === 2 && path[0] === old) path[0] = name;
+  else if (segs[0] === cls && segs.length === 3 && path[0] === segs[1] && path[2] === old) path[2] = name;
   await reload();
 }
 
 async function deleteFolder(segs) {
   const st = folderStats(segs);
-  const inside = [st.subjects != null && plural(st.subjects, 'subject'), st.chapters != null && plural(st.chapters, 'chapter'), plural(st.notes, 'note')]
+  const inside = [st.subjects != null && plural(st.subjects, 'subject'), st.pdfs != null && plural(st.pdfs, 'PDF'),
+    st.chapters != null && plural(st.chapters, 'chapter'), plural(st.notes, 'note')]
     .filter(Boolean).join(', ');
   const ok = await confirmBox({
     title: `Delete “${segs[segs.length - 1]}”?`,
@@ -377,11 +434,176 @@ async function deleteFolder(segs) {
   if (!ok) return;
   try { await api.deleteFolder(segs); } catch (e) { return toast(e.message, 'error'); }
   if (segs.length === 1 && cls === segs[0]) { cls = null; path = []; }
-  else if (segs[0] === cls && segs.slice(1).every((s, i) => path[i] === s)) path = segs.slice(1, -1);
+  else if (segs[0] === cls && segs.length === 2 && path[0] === segs[1]) path = [];
+  else if (segs[0] === cls && segs.length === 3 && path[0] === segs[1] && path[2] === segs[2]) path = [path[0], 'notes'];
   view = { mode: 'browse' };
   await reload();
   toast('Deleted');
 }
+
+// ---------- PDFs ----------
+let uploadTo = null;
+function pickPdfs() {
+  uploadTo = [cls, path[0]];
+  $('pdfInput').value = '';
+  $('pdfInput').click();
+}
+$('pdfInput').addEventListener('change', async e => {
+  const files = [...e.target.files];
+  const subject = uploadTo;
+  if (!files.length || !subject) return;
+  toast(files.length === 1 ? `Adding “${files[0].name}”…` : `Adding ${files.length} PDFs…`);
+  let added = 0;
+  for (const f of files) {
+    try {
+      if (f.size > 50 * 1024 * 1024) throw new Error(`“${f.name}” is larger than 50 MB, which GitHub can't sync. Please use a smaller PDF.`);
+      await api.addPdf(subject, f.name, new Uint8Array(await f.arrayBuffer()));
+      added++;
+    } catch (err) { toast(err.message, 'error'); }
+  }
+  if (!added) return;
+  cls = subject[0];
+  path = [subject[1], 'pdfs'];
+  view = { mode: 'browse' };
+  await reload();
+  toast(added === 1 ? 'PDF added' : `${added} PDFs added`);
+});
+
+async function renamePdf(x) {
+  const segs = x.path.split('/');
+  const p = await ask({ title: `Rename “${x.name}”`, value: x.name, ok: 'Rename', onSubmit: v => api.renamePdf(segs, v) });
+  if (!p || p === x.path) return;
+  if (view.mode === 'pdf' && view.path === x.path) { view = { mode: 'pdf', path: p }; $('main').dataset.pdf = p; }
+  await reload();
+  if (view.mode === 'pdf') $('pdfTitle').textContent = findPdf(p)?.name || '';
+}
+
+async function deletePdf(x) {
+  const ok = await confirmBox({ title: `Delete “${x.name}”?`, text: 'The PDF will be removed from this device and from GitHub.', ok: 'Delete', danger: true });
+  if (!ok) return;
+  try { await api.deletePdf(x.path.split('/')); } catch (e) { return toast(e.message, 'error'); }
+  if (view.path === x.path) view = { mode: 'browse' };
+  await reload();
+  toast('PDF deleted');
+}
+
+// The reader: PDF.js draws each page onto a canvas as it scrolls into view.
+let pdfjs = null, pdf = null;
+async function loadPdfjs() {
+  if (!pdfjs) {
+    pdfjs = await import('./vendor/pdfjs/pdf.min.mjs');
+    pdfjs.GlobalWorkerOptions.workerSrc = new URL('vendor/pdfjs/pdf.worker.min.mjs', location.href).href;
+  }
+  return pdfjs;
+}
+
+function closePdf() {
+  if (!pdf) return;
+  pdf.observer?.disconnect();
+  pdf.doc?.destroy();
+  pdf = null;
+  $('main').dataset.pdf = '';
+}
+
+async function showPdf(p) {
+  closePdf();
+  const x = findPdf(p);
+  const main = $('main');
+  main.dataset.pdf = p;
+  main.scrollTop = 0;
+  main.innerHTML = `<div class="pdf-view">
+    <div class="pdf-bar">
+      <button class="btn ghost" data-action="back">← Back</button>
+      <div class="pdf-title" id="pdfTitle">${esc(x.name)}</div>
+      <span class="pdf-page" id="pdfPage"></span>
+      <button class="btn ghost" data-action="pdf-zoom" data-step="-1" title="Zoom out">−</button>
+      <button class="btn ghost" data-action="pdf-zoom" data-step="1" title="Zoom in">＋</button>
+      ${api.openPdfExternally ? '<button class="btn ghost" data-action="pdf-external" title="Open in your PDF app">Open in app</button>' : ''}
+      <button class="icon-btn" data-action="pdf-menu" data-path="${esc(p)}" title="More">⋯</button>
+    </div>
+    <div class="pdf-pages" id="pdfPages"><div class="empty">Opening PDF…</div></div></div>`;
+  const state = pdf = { path: p, zoom: 1 };
+  try {
+    const [lib, data] = await Promise.all([loadPdfjs(), api.readPdf(p.split('/'))]);
+    const base = new URL('vendor/pdfjs/', location.href).href;
+    const doc = await lib.getDocument({
+      data, cMapUrl: base + 'cmaps/', cMapPacked: true, standardFontDataUrl: base + 'standard_fonts/', wasmUrl: base + 'wasm/',
+    }).promise;
+    if (pdf !== state) { doc.destroy(); return; }
+    state.doc = doc;
+    state.first = (await doc.getPage(1)).getViewport({ scale: 1 });
+    layoutPdf();
+  } catch (e) {
+    if (pdf === state) $('pdfPages').innerHTML = `<div class="empty"><div class="big">⚠️</div><p>This PDF couldn't be opened.<br>${esc(e.message)}</p></div>`;
+  }
+}
+
+// Lay out one placeholder per page, sized from the first page, and draw pages near the screen.
+function layoutPdf() {
+  const state = pdf, box = $('pdfPages');
+  state.observer?.disconnect();
+  const width = Math.min(box.clientWidth - 2, 1100) * state.zoom;
+  box.innerHTML = '';
+  for (let i = 1; i <= state.doc.numPages; i++) {
+    const page = document.createElement('div');
+    page.className = 'pdf-sheet';
+    page.dataset.page = i;
+    page.style.width = `${width}px`;
+    page.style.height = `${width * state.first.height / state.first.width}px`;
+    box.appendChild(page);
+  }
+  state.observer = new IntersectionObserver(entries => {
+    for (const en of entries) {
+      if (en.isIntersecting) drawPage(state, en.target, width);
+      else en.target.replaceChildren(); // free memory for pages far off-screen
+    }
+  }, { root: $('main'), rootMargin: '1200px 0px' });
+  box.querySelectorAll('.pdf-sheet').forEach(el => state.observer.observe(el));
+  updatePageNumber();
+}
+
+async function drawPage(state, el, width) {
+  if (el.firstChild || el.dataset.busy) return;
+  el.dataset.busy = '1';
+  try {
+    const page = await state.doc.getPage(+el.dataset.page);
+    const vp1 = page.getViewport({ scale: 1 });
+    const cssScale = width / vp1.width;
+    // Sharp on high-density screens, but within the canvas size limits of phones and iPads.
+    const dpr = Math.min(window.devicePixelRatio || 1, 2, Math.sqrt(16e6 / (vp1.width * vp1.height * cssScale * cssScale)));
+    const vp = page.getViewport({ scale: cssScale * dpr });
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.floor(vp.width);
+    canvas.height = Math.floor(vp.height);
+    el.style.height = `${vp.height / dpr}px`;
+    await page.render({ canvas, canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+    if (pdf === state && el.isConnected) el.replaceChildren(canvas);
+  } catch { /* page left blank; it is retried when scrolled back into view */ }
+  delete el.dataset.busy;
+}
+
+function zoomPdf(step) {
+  if (!pdf?.doc) return;
+  const levels = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
+  const i = levels.indexOf(pdf.zoom);
+  const next = levels[Math.max(0, Math.min(levels.length - 1, i + step))];
+  if (next === pdf.zoom) return;
+  const main = $('main'), ratio = main.scrollTop / Math.max(1, main.scrollHeight);
+  pdf.zoom = next;
+  layoutPdf();
+  main.scrollTop = ratio * main.scrollHeight;
+}
+
+function updatePageNumber() {
+  if (!pdf?.doc) return;
+  const top = $('main').getBoundingClientRect().top;
+  let current = 1;
+  for (const el of $('pdfPages').children) {
+    if (el.getBoundingClientRect().top - top < $('main').clientHeight / 3) current = +el.dataset.page;
+  }
+  $('pdfPage').textContent = `${current} / ${pdf.doc.numPages}`;
+}
+$('main').addEventListener('scroll', () => { if (pdf) updatePageNumber(); }, { passive: true });
 
 // ---------- settings ----------
 async function openSettings() {
@@ -441,9 +663,10 @@ const actions = {
     if (!(await leaveEditor())) return;
     path = path.slice(0, +d.i); view = { mode: 'browse' }; clearSearch(); render();
   },
-  'open-folder': d => { path = [...path, d.name]; render(); $('main').scrollTop = 0; },
+  'open-folder': d => { path = path.length ? [path[0], 'notes', d.name] : [d.name]; render(); $('main').scrollTop = 0; },
+  'open-section': d => { path = [path[0], d.kind]; render(); $('main').scrollTop = 0; },
   'folder-menu': (d, e) => {
-    const segs = [cls, ...path, d.name];
+    const segs = path.length ? [cls, path[0], d.name] : [cls, d.name];
     showPopup(e, [
       { label: '✎ Rename', run: () => renameFolder(segs) },
       '-',
@@ -454,8 +677,9 @@ const actions = {
   'open-note': d => {
     const n = findNote(d.path);
     if (!n) return;
-    [cls, path[0], path[1]] = d.path.split('/');
-    path.length = 2;
+    const [c, s, ch] = d.path.split('/');
+    cls = c;
+    path = [s, 'notes', ch];
     view = { mode: 'note', path: n.path };
     markSeen(n);
     clearSearch();
@@ -472,12 +696,41 @@ const actions = {
     await reload();
     toast('Note deleted');
   },
-  fab: () => {
+  fab: (_d, e) => {
     if (!cls) return newClass();
     if (view.mode === 'note') return openEditor(view.path.split('/').slice(0, 3));
-    if (path.length === 2) return openEditor([cls, ...path]);
+    if (path.length === 3) return openEditor([cls, path[0], path[2]]);
+    if (path.length === 2) return path[1] === 'pdfs' ? pickPdfs() : newFolder();
+    if (path.length === 1) {
+      const newChapter = () => { path = [path[0], 'notes']; render(); newFolder(); };
+      if (!e) return newChapter();
+      return showPopup(e, [
+        { label: '📄 Upload chapter PDF', run: pickPdfs },
+        { label: '📝 New chapter for notes', run: newChapter },
+      ]);
+    }
     return newFolder();
   },
+  'open-pdf': d => {
+    const x = findPdf(d.path);
+    if (!x) return;
+    const [c, s] = d.path.split('/');
+    cls = c;
+    path = [s, 'pdfs'];
+    view = { mode: 'pdf', path: x.path };
+    clearSearch();
+    render();
+  },
+  'pdf-menu': (d, e) => {
+    const x = findPdf(d.path);
+    showPopup(e, [
+      { label: '✎ Rename', run: () => renamePdf(x) },
+      '-',
+      { label: '🗑 Delete', cls: 'danger', run: () => deletePdf(x) },
+    ]);
+  },
+  'pdf-zoom': d => zoomPdf(+d.step),
+  'pdf-external': () => api.openPdfExternally(view.path).catch(e => toast(e.message, 'error')),
   'save-note': () => saveEditor(),
   'cancel-edit': async () => { if (await leaveEditor()) render(); },
   'toggle-preview': (_d, _e, el) => {
@@ -531,7 +784,7 @@ async function goBack() {
   if ($('popup').classList.contains('show') || $('classMenu').classList.contains('show')) { closeMenus(); return true; }
   if (view.mode === 'edit') { if (await leaveEditor()) render(); return true; }
   if (query) { clearSearch(); render(); return true; }
-  if (view.mode === 'note') { view = { mode: 'browse' }; render(); return true; }
+  if (view.mode === 'note' || view.mode === 'pdf') { view = { mode: 'browse' }; render(); return true; }
   if (path.length) { path.pop(); render(); return true; }
   return false;
 }

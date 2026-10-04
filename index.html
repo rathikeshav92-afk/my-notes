@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta http-equiv="Content-Security-Policy"
-  content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://api.github.com">
+  content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://api.github.com">
 <meta name="theme-color" content="#0f1115">
 <meta name="color-scheme" content="dark">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -25,7 +25,7 @@
     </div>
     <nav class="crumbs" id="crumbs"></nav>
     <div class="spacer"></div>
-    <input class="search" id="search" type="search" placeholder="Search all notes" autocomplete="off">
+    <input class="search" id="search" type="search" placeholder="Search notes &amp; PDFs" autocomplete="off">
     <button class="sync-pill" id="syncPill" data-action="sync"></button>
     <button class="icon-btn" data-action="settings" title="Settings">⚙</button>
   </div>
@@ -38,6 +38,7 @@
   <div class="popup" id="popup"></div>
   <div class="modal-bg" id="modalBg"><div class="modal" id="modal"></div></div>
   <div class="toasts" id="toasts"></div>
+  <input type="file" id="pdfInput" accept="application/pdf,.pdf" multiple hidden>
 
   <script src="vendor/marked.umd.js"></script>
   <script src="vendor/purify.min.js"></script>
