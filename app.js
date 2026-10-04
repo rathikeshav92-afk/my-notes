@@ -203,10 +203,12 @@ function pdfCard(x, where) {
 
 function pdfsView() {
   const s = curSubject();
-  const head = `<h1 class="page">📄 ${esc(s.name)} · Chapter PDFs</h1>`;
+  // A <label> opens the device's file picker natively, the most reliable way on phones and iPads.
+  const upload = big => `<label for="pdfInput" class="btn${big ? '' : ' ghost'}" data-action="prepare-upload">📄 Upload PDF</label>`;
+  const head = `<div class="page-row"><h1 class="page">📄 ${esc(s.name)} · Chapter PDFs</h1>${s.pdfs.length ? upload(false) : ''}</div>`;
   if (!s.pdfs.length) {
     return head + `<div class="empty"><div class="big">📄</div><h2>No PDFs yet</h2>
-      <p>Press the ＋ button to upload chapter PDFs from this device.</p></div>`;
+      <p>Upload chapter PDFs from this device. You can pick several at once.</p><p>${upload(true)}</p></div>`;
   }
   return head + `<p class="label">${plural(s.pdfs.length, 'PDF')}</p><div class="list">${s.pdfs.map(x => pdfCard(x)).join('')}</div>`;
 }
@@ -448,10 +450,16 @@ function pickPdfs() {
   $('pdfInput').value = '';
   $('pdfInput').click();
 }
+// Tapping an Upload PDF label: remember where the PDFs go; the label itself opens the picker.
+function prepareUpload() {
+  uploadTo = [cls, path[0]];
+  $('pdfInput').value = '';
+}
 $('pdfInput').addEventListener('change', async e => {
-  const files = [...e.target.files];
-  const subject = uploadTo;
-  if (!files.length || !subject) return;
+  const files = [...(e.target.files || [])];
+  const subject = uploadTo || (cls && path[0] ? [cls, path[0]] : null);
+  if (!files.length) return;
+  if (!subject) return toast('Open a subject first, then upload its PDFs.', 'error');
   toast(files.length === 1 ? `Adding “${files[0].name}”…` : `Adding ${files.length} PDFs…`);
   let added = 0;
   for (const f of files) {
@@ -729,6 +737,7 @@ const actions = {
       { label: '🗑 Delete', cls: 'danger', run: () => deletePdf(x) },
     ]);
   },
+  'prepare-upload': () => prepareUpload(),
   'pdf-zoom': d => zoomPdf(+d.step),
   'pdf-external': () => api.openPdfExternally(view.path).catch(e => toast(e.message, 'error')),
   'save-note': () => saveEditor(),

@@ -123,6 +123,11 @@ mark { background: #5b4a12; color: inherit; border-radius: 3px; padding: 0 2px; 
 .hint { color: var(--muted); font-size: 12.5px; margin-top: 8px; }
 
 /* ---------- subject sections & PDFs ---------- */
+/* Kept in the page (not display:none) so every phone and iPad lets it open the file picker. */
+.visually-hidden { position: fixed; left: 0; bottom: 0; width: 1px; height: 1px; opacity: 0; overflow: hidden; pointer-events: none; }
+.page-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
+.page-row h1.page { margin: 0; flex: 1; min-width: 0; }
+label.btn { display: inline-flex; align-items: center; gap: 6px; }
 .grid.sections { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
 .section-card { padding: 22px 20px 18px; }
 .section-card .icon { font-size: 38px; }
