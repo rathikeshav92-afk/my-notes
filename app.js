@@ -153,7 +153,7 @@ function renderTop() {
 function fabLabel() {
   if (view.mode === 'edit') return null;
   if (!cls) return 'New class';
-  return 'Add a folder, PDF or note';
+  return 'Add a folder, file or note';
 }
 
 function renderSync() {
@@ -172,7 +172,7 @@ function renderSync() {
 
 function welcomeView() {
   return `<div class="empty"><div class="big">📚</div><h2>Welcome to My Notes</h2>
-    <p>Start by creating your first class, for example “Class 10”.<br>Then add subjects, chapter PDFs, chapters and notes with the ＋ button.</p>
+    <p>Start by creating your first class, for example “Class 10”.<br>Then add subjects, chapters, files and notes with the ＋ button.</p>
     <p><button class="btn" data-action="new-class">＋ Create a class</button>
     ${syncState.state === 'off' ? '<button class="btn ghost" data-action="settings">Connect to GitHub</button>' : ''}</p></div>`;
 }
@@ -193,12 +193,12 @@ function noteCard(n, where) {
 }
 const badge = n => (n.author === 'claude' ? '<span class="badge">✨ by Claude</span>' : '<span class="badge me">by you</span>');
 
-// The PDFs and notes kept directly in a folder.
+// The files and notes kept directly in a folder.
 function itemsSection(folder) {
-  return (folder.files.length ? `<div class="section"><p class="label">${plural(folder.files.length, 'PDF')}</p><div class="list">${folder.files.map(x => fileCard(x)).join('')}</div></div>` : '')
+  return (folder.files.length ? `<div class="section"><p class="label">${plural(folder.files.length, 'file')}</p><div class="list">${folder.files.map(x => fileCard(x)).join('')}</div></div>` : '')
     + (folder.notes.length ? `<div class="section"><p class="label">${plural(folder.notes.length, 'note')}</p><div class="list">${folder.notes.map(n => noteCard(n)).join('')}</div></div>` : '');
 }
-const addHint = '<p>Press the ＋ button to add a folder, upload PDFs or write a note.</p>';
+const addHint = '<p>Press the ＋ button to add a folder, upload files or write a note.</p>';
 
 function subjectsView() {
   const c = curClass();
@@ -213,7 +213,7 @@ function subjectsView() {
     + (c.subjects.length ? `<div class="section"><p class="label">Subjects</p><div class="grid">${c.subjects.map(s => {
       const notes = [...s.notes, ...s.chapters.flatMap(ch => ch.notes)];
       const files = s.files.length + s.pdfFolder.length + s.chapters.reduce((n, ch) => n + ch.files.length, 0);
-      return folderCard(s.name, '📁', `${plural(files, 'PDF')} · ${plural(notes.length, 'note')}`, notes.some(isNew));
+      return folderCard(s.name, '📁', `${plural(files, 'file')} · ${plural(notes.length, 'note')}`, notes.some(isNew));
     }).join('')}</div></div>` : '')
     + itemsSection(c)
     + (recent.length ? `<div class="section"><p class="label">Recent notes</p><div class="list">${recent.map(n => noteCard(n, n.where)).join('')}</div></div>` : '');
@@ -241,8 +241,12 @@ const KIND = {
   sheet: { label: 'XLS', color: '#22a55b', name: 'Spreadsheet' },
   image: { label: 'IMG', color: '#a855f7', name: 'Image' },
   text: { label: 'TXT', color: '#8b93a7', name: 'Text file' },
+  video: { label: 'VID', color: '#14b8a6', name: 'Video' },
+  audio: { label: 'AUD', color: '#ec4899', name: 'Audio' },
+  archive: { label: 'ZIP', color: '#eab308', name: 'Archive' },
+  other: { label: 'FILE', color: '#64748b', name: 'File' },
 };
-const kindOf = x => KIND[x.kind] || KIND.text;
+const kindOf = x => KIND[x.kind] || KIND.other;
 function fileIcon(x, size = 40) {
   const k = kindOf(x);
   const label = x.ext && x.ext.length <= 4 ? x.ext.toUpperCase() : k.label;
@@ -265,11 +269,11 @@ function fileCard(x, where) {
 function pdfsView() {
   const s = curSubject();
   // A <label> opens the device's file picker natively, the most reliable way on phones and iPads.
-  const upload = big => `<label for="pdfInput" class="btn${big ? '' : ' ghost'}" data-action="prepare-upload">📄 Upload PDF</label>`;
+  const upload = big => `<label for="pdfInput" class="btn${big ? '' : ' ghost'}" data-action="prepare-upload">📎 Upload file</label>`;
   const head = `<div class="page-row"><h1 class="page">📄 ${esc(s.name)} · Chapter PDFs</h1>${s.pdfFolder.length ? upload(false) : ''}</div>`;
   if (!s.pdfFolder.length) {
-    return head + `<div class="empty"><div class="big">📄</div><h2>No PDFs yet</h2>
-      <p>Upload chapter PDFs from this device. You can pick several at once. Tapping a PDF opens it in your PDF app.</p><p>${upload(true)}</p></div>`;
+    return head + `<div class="empty"><div class="big">📄</div><h2>No files yet</h2>
+      <p>Upload chapter PDFs or any other files from this device. You can pick several at once. Tapping a file opens it in its app.</p><p>${upload(true)}</p></div>`;
   }
   return head + `<p class="label">${plural(s.pdfFolder.length, 'PDF')}</p><div class="list">${s.pdfFolder.map(x => fileCard(x)).join('')}</div>`;
 }
@@ -289,13 +293,13 @@ function chaptersView() {
 function notesView() {
   const ch = curChapter();
   const buttons = `<button class="btn ghost" data-action="write-note">✎ Write a note</button>
-    <label for="pdfInput" class="btn ghost" data-action="prepare-upload">📄 Upload PDF</label>`;
+    <label for="pdfInput" class="btn ghost" data-action="prepare-upload">📎 Upload file</label>`;
   const head = `<div class="page-row"><h1 class="page">📂 ${esc(ch.name)}</h1>${ch.notes.length || ch.files.length ? buttons : ''}</div>`;
   if (!ch.notes.length && !ch.files.length) {
     return head + `<div class="empty"><div class="big">📝</div><h2>Nothing in this chapter yet</h2>
-      <p>Write a note, upload a PDF of your notes, or ask Claude to make notes for this chapter.</p>
+      <p>Write a note, upload files (PDFs, photos, documents…), or ask Claude to make notes for this chapter.</p>
       <p class="empty-actions"><button class="btn" data-action="write-note">✎ Write a note</button>
-      <label for="pdfInput" class="btn" data-action="prepare-upload">📄 Upload PDF</label></p></div>`;
+      <label for="pdfInput" class="btn" data-action="prepare-upload">📎 Upload file</label></p></div>`;
   }
   return head + itemsSection(ch);
 }
@@ -500,7 +504,7 @@ async function renameFolder(segs) {
 
 async function deleteFolder(segs) {
   const st = folderStats(segs);
-  const inside = [st.subjects != null && plural(st.subjects, 'subject'), st.files != null && plural(st.files, 'PDF'),
+  const inside = [st.subjects != null && plural(st.subjects, 'subject'), st.files != null && plural(st.files, 'file'),
     st.chapters != null && plural(st.chapters, 'chapter'), plural(st.notes, 'note')]
     .filter(Boolean).join(', ');
   const ok = await confirmBox({
@@ -518,14 +522,14 @@ async function deleteFolder(segs) {
   toast('Deleted');
 }
 
-// ---------- files (PDFs and other documents) ----------
-// Uploaded PDFs go into the folder on screen (or the one chosen from the ＋ menu).
+// ---------- files (any type) ----------
+// Uploaded files go into the folder on screen (or the one chosen from the ＋ menu).
 let uploadTo = null, folderUploadTo = null;
 function pickFiles(target = currentFolder()) {
   prepareUpload(target);
   $('pdfInput').click();
 }
-// Tapping an Upload PDF label: remember where the files go; the label itself opens the picker.
+// Tapping an Upload file label: remember where the files go; the label itself opens the picker.
 function prepareUpload(target = currentFolder()) {
   uploadTo = target;
   $('pdfInput').value = '';
@@ -541,8 +545,8 @@ $('pdfInput').addEventListener('change', async e => {
   const files = [...(e.target.files || [])];
   const target = uploadTo || (cls ? currentFolder() : null);
   if (!files.length) return;
-  if (!target) return toast('Create a class first, then upload PDFs into it.', 'error');
-  toast(files.length === 1 ? `Adding “${files[0].name}”…` : `Adding ${files.length} PDFs…`);
+  if (!target) return toast('Create a class first, then upload files into it.', 'error');
+  toast(files.length === 1 ? `Adding “${files[0].name}”…` : `Adding ${files.length} files…`);
   let added = 0;
   for (const f of files) {
     try {
@@ -555,19 +559,20 @@ $('pdfInput').addEventListener('change', async e => {
   goToFolder(target);
   view = { mode: 'browse' };
   await reload();
-  toast(added === 1 ? 'PDF added' : `${added} PDFs added`);
+  toast(added === 1 ? 'File added' : `${added} files added`);
 });
 
-// Upload a whole folder: its PDFs go into a folder of the same name, and its subfolders become
-// subjects/chapters as far as class › subject › chapter allows. Deeper PDFs go into the deepest folder.
+// Upload a whole folder: its files go into a folder of the same name, and its subfolders become
+// subjects/chapters as far as class › subject › chapter allows. Deeper files go into the deepest folder.
 $('folderInput').addEventListener('change', async e => {
   const all = [...(e.target.files || [])];
   const base = folderUploadTo || currentFolder();
   if (!all.length) return;
-  const pdfs = all.filter(f => /\.pdf$/i.test(f.name));
+  // Everything except system clutter and Markdown files (which would turn into notes).
+  const pdfs = all.filter(f => !/^(\.ds_store|thumbs\.db|desktop\.ini)$/i.test(f.name) && !f.name.startsWith('.') && !/\.md$/i.test(f.name));
   const top = (all[0].webkitRelativePath || '').split('/')[0] || 'folder';
-  if (!pdfs.length) return toast(`“${top}” has no PDFs in it.`, 'error');
-  toast(`Adding ${plural(pdfs.length, 'PDF')} from “${top}”…`);
+  if (!pdfs.length) return toast(`“${top}” has no files in it.`, 'error');
+  toast(`Adding ${plural(pdfs.length, 'file')} from “${top}”…`);
   const made = new Map();
   let added = 0, landing = base;
   for (const f of pdfs) {
@@ -589,7 +594,7 @@ $('folderInput').addEventListener('change', async e => {
   view = { mode: 'browse' };
   await reload();
   const skipped = all.length - pdfs.length;
-  toast(`${plural(added, 'PDF')} added${skipped ? ` (${plural(skipped, 'other file')} skipped: only PDFs are stored)` : ''}`);
+  toast(`${plural(added, 'file')} added${skipped ? ` (${plural(skipped, 'hidden or system file')} skipped)` : ''}`);
 });
 
 // What the ＋ button offers in the folder on screen.
@@ -598,8 +603,8 @@ function addOptions() {
   const inPdfFolder = here[2] === PDF_DIR;
   const opts = [];
   if (here.length < 3) opts.push({ label: here.length === 1 ? '📁 New subject folder' : '📁 New chapter folder', run: () => newFolder(here) });
-  opts.push({ label: '📄 Upload PDF', run: () => pickFiles(here) });
-  if (canPickFolder) opts.push({ label: '🗂 Upload a folder of PDFs', run: () => pickFolder(here) });
+  opts.push({ label: '📎 Upload files', run: () => pickFiles(here) });
+  if (canPickFolder) opts.push({ label: '🗂 Upload a folder', run: () => pickFolder(here) });
   if (!inPdfFolder) opts.push({ label: '✎ Write a note', run: () => openEditor(here) });
   return opts;
 }
@@ -669,7 +674,7 @@ async function shareFileItem(x, e) {
 }
 
 // ---------- opening files ----------
-// Files are only stored here; opening one hands it to the device's own app (PDF reader, Word, ...).
+// Files are only stored here; opening one hands it to the device's own app for it (PDF reader, Word, video player...).
 async function openFileItem(x, e) {
   if (!x) return;
   try {
@@ -679,12 +684,12 @@ async function openFileItem(x, e) {
     if (r === 'downloaded') toast('Saved to your Downloads. Open it from there.');
     if (r && r.needsTap) {
       // The browser needs a fresh tap before it shows the "Open in" menu.
-      openModal(`<h3>Open “${esc(x.name)}”</h3><p>Choose your PDF app (Books, Files, Adobe…) in the next menu.</p>
+      openModal(`<h3>Open “${esc(x.name)}”</h3><p>Choose the app to open it with in the next menu.</p>
         <div class="row"><button class="btn ghost" data-action="modal-cancel">Cancel</button><button class="btn" id="openNow">Open</button></div>`);
       $('openNow').onclick = () => { closeModal(); r.needsTap().catch(err => toast(`Couldn't open: ${err.message}`, 'error')); };
     }
   } catch (err) {
-    toast(/no app|activity|not found/i.test(err.message) ? 'No app on this device can open this file. Install a PDF reader such as Adobe Acrobat or Google Drive.' : `Couldn't open: ${err.message}`, 'error');
+    toast(/no app|activity|not found/i.test(err.message) ? 'No app on this device can open this type of file. Install one that can (for PDFs, Adobe Acrobat or Google Drive).' : `Couldn't open: ${err.message}`, 'error');
   }
 }
 
