@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Download My Notes</title>
+<meta name="description" content="Download the My Notes app for Android, Windows and iPad.">
+<link rel="icon" href="../icons/icon-192.png">
+<style>
+  :root {
+    --bg: #0f1115; --card: #1c2029; --line: #2a2f3a; --text: #e8eaf0; --muted: #8b93a7;
+    --accent: #7c8cff; --accent-ink: #0f1115;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.55 "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+    padding: max(32px, env(safe-area-inset-top)) 16px 48px; }
+  main { max-width: 720px; margin: 0 auto; }
+  header { display: flex; align-items: center; gap: 16px; margin-bottom: 28px; }
+  header img { width: 64px; height: 64px; }
+  h1 { margin: 0; font-size: 28px; }
+  header p { margin: 2px 0 0; color: var(--muted); }
+  .cards { display: grid; gap: 14px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 20px; }
+  .card h2 { margin: 0 0 4px; font-size: 19px; display: flex; align-items: center; gap: 10px; }
+  .card p { margin: 0 0 14px; color: var(--muted); }
+  .card ol { margin: 12px 0 0; padding-left: 20px; color: var(--muted); font-size: 14.5px; }
+  .card ol li { margin: 3px 0; }
+  .btn { display: inline-block; background: var(--accent); color: var(--accent-ink); text-decoration: none;
+    font-weight: 700; padding: 11px 18px; border-radius: 10px; }
+  .btn:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
+  .size { color: var(--muted); font-size: 14px; margin-left: 8px; }
+  .open { color: var(--accent); }
+  footer { margin-top: 28px; color: var(--muted); font-size: 14px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <img src="../icons/icon-192.png" alt="">
+    <div><h1>My Notes</h1><p>Your class, subject and chapter notes on every device. Version <span id="ver">1.7.1</span>.</p></div>
+  </header>
+
+  <div class="cards">
+    <section class="card">
+      <h2>🤖 Android phone</h2>
+      <p>For OnePlus, Samsung, Pixel and other Android phones.</p>
+      <a class="btn" href="My-Notes.apk" download>Download for Android</a><span class="size">4.1 MB</span>
+      <ol>
+        <li>Open the downloaded file.</li>
+        <li>If asked, allow your browser to <b>install unknown apps</b>, then tap <b>Install</b>.</li>
+      </ol>
+    </section>
+
+    <section class="card">
+      <h2>📱 iPad or iPhone</h2>
+      <p>No download needed. It installs from Safari.</p>
+      <a class="btn" href="../">Open My Notes</a>
+      <ol>
+        <li>Open this page in <b>Safari</b> and tap <b>Open My Notes</b>.</li>
+        <li>Tap <b>Share</b> (the square with an arrow) → <b>Add to Home Screen</b>.</li>
+      </ol>
+    </section>
+
+    <section class="card">
+      <h2>💻 Windows computer</h2>
+      <p>For Windows 10 and 11.</p>
+      <a class="btn" href="https://github.com/rathikeshav92-afk/Notes-app/releases/latest">Download for Windows</a><span class="size">needs GitHub sign-in for now</span>
+      <ol>
+        <li>Run the downloaded installer.</li>
+        <li>If Windows says “Windows protected your PC”, click <b>More info → Run anyway</b>. This appears because the app isn't code-signed.</li>
+      </ol>
+    </section>
+  </div>
+
+  <footer>To see your notes on a device, open the app, tap ⚙ and add your GitHub access token.</footer>
+</main>
+</body>
+</html>
