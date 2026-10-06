@@ -1,4 +1,4 @@
-// Keeps the home-screen app working offline. The build replaces 1.9.1-1791287214977 so each release refreshes the cache.
+// Keeps the home-screen app working offline. The build replaces 1.9.2-1791307312158 so each release refreshes the cache.
 const CACHE = 'my-notes-VERSION';
 const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'backend.js', 'vendor/marked.umd.js', 'vendor/purify.min.js',
   'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];

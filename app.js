@@ -542,8 +542,7 @@ async function newFolder(parent = currentFolder()) {
     onSubmit: v => api.createFolder(parent, v),
   });
   if (!name) return;
-  goToFolder([...parent, name]);
-  view = { mode: 'browse' };
+  view = { mode: 'browse' };  // stay where you are; the new folder just appears in the list
   await reload();
   toast(`Folder “${name}” created`);
 }
