@@ -122,6 +122,14 @@ mark { background: #5b4a12; color: inherit; border-radius: 3px; padding: 0 2px; 
 .editor .live { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px 20px; overflow: auto; }
 .hint { color: var(--muted); font-size: 12.5px; margin-top: 8px; }
 
+/* ---------- favourites, recycle bin ---------- */
+.star { color: #f5c542; margin-left: 6px; font-size: .9em; }
+.fav-grid { margin-bottom: 12px; }
+.btn.fav-btn.on { color: #f5c542; }
+.trash-emoji { flex: none; width: 40px; text-align: center; font-size: 30px; line-height: 1.2; }
+.trash-item { cursor: default; }
+.trash-actions { flex: none; display: flex; gap: 8px; }
+
 /* ---------- subject sections & PDFs ---------- */
 /* Kept in the page (not display:none) so every phone and iPad lets it open the file picker. */
 .visually-hidden { position: fixed; left: 0; bottom: 0; width: 1px; height: 1px; opacity: 0; overflow: hidden; pointer-events: none; }
@@ -238,5 +246,9 @@ body.dragging .drop-overlay { display: flex; }
   .modal input { font-size: 16px; }
   .fab { width: 56px; height: 56px; font-size: 30px; }
   .grid.sections { grid-template-columns: 1fr 1fr; }
+  .trash-item { flex-wrap: wrap; }
+  .trash-item .file-text { flex-basis: calc(100% - 60px); }
+  .trash-actions { flex-basis: 100%; }
+  .trash-actions .btn { flex: 1; }
   .section-card { padding: 18px 14px 14px; }
 }
