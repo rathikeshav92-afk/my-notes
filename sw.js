@@ -1,4 +1,4 @@
-// Keeps the home-screen app working offline. The build replaces 1.7.0-1791209545005 so each release refreshes the cache.
+// Keeps the home-screen app working offline. The build replaces 1.8.0-1791283067738 so each release refreshes the cache.
 const CACHE = 'my-notes-VERSION';
 const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'backend.js', 'vendor/marked.umd.js', 'vendor/purify.min.js',
   'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];
@@ -18,6 +18,7 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== location.origin) return;
+  if (url.pathname.includes('/download/')) return; // app installers: never cache these
   e.respondWith(
     fetch(e.request)
       .then(res => {

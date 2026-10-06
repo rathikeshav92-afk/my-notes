@@ -143,6 +143,21 @@ label.btn { display: inline-flex; align-items: center; gap: 6px; }
 
 
 
+/* ---------- move picker ---------- */
+.move-list { max-height: 55vh; overflow: auto; border: 1px solid var(--line); border-radius: 10px; padding: 4px; }
+.move-row { padding: 9px 12px; border-radius: 7px; cursor: pointer; overflow-wrap: anywhere; }
+.move-row:hover { background: var(--hover); }
+.move-row.current { color: var(--muted); cursor: default; }
+.move-row.current:hover { background: none; }
+.move-row .sub { color: var(--muted); font-size: 13px; }
+
+/* ---------- drag & drop upload ---------- */
+.drop-overlay { position: fixed; inset: 0; z-index: 70; display: none; align-items: center; justify-content: center;
+  background: rgba(15,17,21,.82); pointer-events: none; }
+body.dragging .drop-overlay { display: flex; }
+.drop-box { border: 3px dashed var(--accent); border-radius: 20px; padding: 40px 56px; text-align: center; font-size: 46px; }
+.drop-box div { font-size: 18px; font-weight: 600; margin-top: 8px; }
+
 /* ---------- buttons ---------- */
 .btn { background: var(--accent); color: #0f1115; border: 0; border-radius: 9px; padding: 8px 16px; font-weight: 600; cursor: pointer; white-space: nowrap; }
 .btn:hover { filter: brightness(1.08); }
@@ -204,7 +219,7 @@ label.btn { display: inline-flex; align-items: center; gap: 6px; }
   .sync-pill .pill-text { display: none; }
   .sync-pill .dot { margin-right: 0; }
   .topbar > .icon-btn { order: 4; }
-  .crumbs { order: 5; flex-basis: 100%; font-size: 13.5px; }
+  .crumbs { order: 5; flex-basis: 100%; font-size: 13.5px; white-space: normal; line-height: 1.6; }
   .crumbs:empty { display: none; }
   main { padding: 16px 14px calc(100px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))); }
   h1.page { font-size: 21px; margin-bottom: 14px; }
