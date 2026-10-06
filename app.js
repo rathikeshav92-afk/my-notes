@@ -50,7 +50,6 @@ let seen = new Set(load('seen', []));
 let syncState = { state: 'off' };
 let dirty = false;
 
-const PDF_DIR = 'Chapter PDFs';
 // The folder a note or file is in, as path segments, e.g. ['Class 11', 'Accounts', 'Depreciation'].
 const folderOf = p => String(p).split('/').slice(0, -1);
 // A short label for a folder: "Accounts › Depreciation", or just the class name for the class itself.
@@ -218,11 +217,10 @@ function sortMenu(e) {
   })));
 }
 
-// The files and notes kept directly in a folder.
+// The files and notes kept directly in a folder: one mixed list, no separate file/note groups.
 function itemsSection(folder) {
-  const files = sortItems(folder.files), notes = sortItems(folder.notes);
-  return (files.length ? `<div class="section"><p class="label">${plural(files.length, 'file')}</p><div class="list">${files.map(x => fileCard(x)).join('')}</div></div>` : '')
-    + (notes.length ? `<div class="section"><p class="label">${plural(notes.length, 'note')}</p><div class="list">${notes.map(n => noteCard(n)).join('')}</div></div>` : '');
+  const items = sortItems([...folder.files, ...folder.notes]);
+  return items.length ? `<div class="section"><div class="list">${items.map(x => (x.title !== undefined ? noteCard(x) : fileCard(x))).join('')}</div></div>` : '';
 }
 
 // A class's starred folders, notes and files, all in one place at the top of its page.
@@ -235,7 +233,7 @@ function favouritesSection(c) {
     const st = folderStats(node);
     const count = [st.folders && plural(st.folders, 'folder'), st.files && plural(st.files, 'file'), st.notes && plural(st.notes, 'note')].filter(Boolean).join(' · ') || 'Empty';
     const within = segs.length > 2 ? `in ${placeLabel(segs.slice(0, -1))} · ` : '';
-    return folderCard(node.name, node.name === PDF_DIR ? '📄' : '📂', within + count, false, segs.join('/'));
+    return folderCard(node.name, '📂', within + count, false, segs.join('/'));
   });
   return `<div class="section"><p class="label">★ Favourites</p>
     ${cards.length ? `<div class="grid fav-grid">${cards.join('')}</div>` : ''}
@@ -248,17 +246,12 @@ function folderView() {
   const depth = path.length;
   const icon = depth === 0 ? '🎓' : depth === 1 ? '📁' : '📂';
   const folders = sortItems(node.folders);
-  if (depth === 1) folders.sort((a, b) => (b.name === PDF_DIR) - (a.name === PDF_DIR)); // Chapter PDFs first (the sort is stable)
   const cards = folders.map(f => {
     const st = folderStats(f);
     const count = [st.folders && plural(st.folders, 'folder'), st.files && plural(st.files, 'file'), st.notes && plural(st.notes, 'note')]
       .filter(Boolean).join(' · ') || 'Empty';
-    return folderCard(f.name, f.name === PDF_DIR ? '📄' : depth === 0 ? '📁' : '📂', count, st.hasNew, [cls, ...path, f.name].join('/'));
+    return folderCard(f.name, depth === 0 ? '📁' : '📂', count, st.hasNew, [cls, ...path, f.name].join('/'));
   });
-  // Every subject offers a Chapter PDFs folder, even before anything is in it.
-  if (depth === 1 && !node.folders.some(f => f.name === PDF_DIR)) {
-    cards.unshift(`<div class="folder" data-action="make-pdf-folder"><div class="icon">📄</div><div class="name">${PDF_DIR}</div><div class="count">Empty</div></div>`);
-  }
   const buttons = `<button class="btn ghost" data-action="sort-menu" title="Sort this folder">⇅ Sort: ${SORTS[sortBy] || SORTS.newest} ▾</button>
     <button class="btn ghost" data-action="write-note">✎ Write a note</button>
     <label for="pdfInput" class="btn ghost" data-action="prepare-upload">📎 Upload file</label>`;
@@ -280,7 +273,7 @@ function folderView() {
   }
   return head
     + (depth === 0 ? favouritesSection(node) : '')
-    + (cards.length ? `<div class="section"><p class="label">${depth === 0 ? 'Subjects' : 'Folders'}</p><div class="grid">${cards.join('')}</div></div>` : '')
+    + (cards.length ? `<div class="section">${depth === 0 ? '<p class="label">Subjects</p>' : ''}<div class="grid">${cards.join('')}</div></div>` : '')
     + itemsSection(node)
     + recent;
 }
@@ -918,11 +911,6 @@ const actions = {
     path = path.slice(0, +d.i); view = { mode: 'browse' }; clearSearch(); render();
   },
   'open-folder': d => { goToFolder(d.path.split('/')); render(); $('main').scrollTop = 0; },
-  'make-pdf-folder': async () => {
-    try { await api.ensureFolder([cls, ...path], PDF_DIR); } catch (e) { return toast(e.message, 'error'); }
-    path = [...path, PDF_DIR];
-    await reload();
-  },
   'new-folder': () => newFolder(),
   'folder-menu': (d, e) => {
     const segs = d.path.split('/');
